@@ -503,7 +503,7 @@ def daemon(ctx: click.Context) -> None:
     # Start the web dashboard if enabled
     if config.web.enabled:
         from src.web.server import start_web_server
-        start_web_server(db, config, host=config.web.host, port=config.web.port)
+        start_web_server(db, config, host=config.web.host, port=config.web.port, sched_manager=sched)
         console.print(
             f"[bold cyan]Dashboard:[/bold cyan] http://{config.web.host}:{config.web.port}"
         )

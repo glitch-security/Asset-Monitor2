@@ -34,9 +34,10 @@
     .port-ssh   { background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044; }
     .port-risky { background:#3d1111;color:#f85149;border:1px solid #da363344; }
     .port-other { background:#1c2128;color:#8b949e;border:1px solid #30363d; }
+    .port-new   { animation: pulse-port 1.5s ease-in-out 3; }
+    @keyframes pulse-port { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 6px #f85149;} }
     .sec-present { color:#3fb950;font-size:.8rem; }
     .sec-missing  { color:#f85149;font-size:.8rem; }
-    .sec-label    { font-size:.7rem;color:#8b949e; }
     .section-title { font-size:.8rem;text-transform:uppercase;letter-spacing:.8px;color:#8b949e;font-weight:600; }
     .text-muted { color: #8b949e !important; }
     .alert-critical { background:#3d1111;border:1px solid #da3633;border-radius:6px;padding:.75rem 1rem; }
@@ -48,6 +49,42 @@
     ::-webkit-scrollbar { width:6px;height:6px; }
     ::-webkit-scrollbar-track { background:#0d1117; }
     ::-webkit-scrollbar-thumb { background:#30363d;border-radius:3px; }
+    .domain-stat { font-size:.75rem;color:#8b949e; }
+    .toast-container { position:fixed;bottom:1.5rem;right:1.5rem;z-index:11000; }
+    .scan-spinner { width:14px;height:14px; }
+    .technique-toggle label { font-size:.8rem;color:#c9d1d9;cursor:pointer; }
+    .form-check-input:checked { background-color:#388bfd;border-color:#388bfd; }
+    .modal-dark .modal-content { background:#161b22;border:1px solid #30363d;color:#c9d1d9; }
+    .modal-dark .modal-header { border-bottom:1px solid #30363d; }
+    .modal-dark .modal-footer { border-top:1px solid #30363d; }
+    .modal-dark .btn-close { filter:invert(1); }
+    .modal-dark .form-control, .modal-dark .form-select { background:#0d1117;border-color:#30363d;color:#c9d1d9; }
+    .modal-dark .form-control:focus, .modal-dark .form-select:focus { background:#0d1117;border-color:#388bfd;color:#c9d1d9;box-shadow:none; }
+    .modal-dark .form-text { color:#8b949e; }
+    .modal-dark .form-check-input { background-color:#0d1117;border-color:#30363d; }
+    .section-sep { border-color:#30363d;margin:1rem 0; }
+    /* Profile badges */
+    .profile-passive    { background:#1a2a1a;color:#3fb950;border:1px solid #3fb95044;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-stealth    { background:#1a1a2a;color:#7c6aff;border:1px solid #7c6aff44;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-open       { background:#1a2a3a;color:#58a6ff;border:1px solid #388bfd44;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-aggressive { background:#3a1a1a;color:#f85149;border:1px solid #da363344;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-custom     { background:#2a2000;color:#e3b341;border:1px solid #d2992244;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-default    { background:#1c2128;color:#8b949e;border:1px solid #30363d;font-size:.65rem;padding:1px 6px;border-radius:3px; }
+    .profile-card { background:#1c2128;border:1px solid #30363d;border-radius:8px;padding:1rem;position:relative; }
+    .profile-card.builtin { border-left:3px solid #388bfd; }
+    .profile-card.custom  { border-left:3px solid #e3b341; }
+    /* Domain detail panel */
+    #domain-detail { position:fixed;top:0;left:0;right:0;bottom:0;background:#0d1117;z-index:8000;overflow-y:auto;display:none; }
+    #domain-detail.visible { display:block; }
+    .detail-navbar { background:#161b22;border-bottom:1px solid #30363d;padding:.6rem 1rem;position:sticky;top:0;z-index:100; }
+    .sub-tab-custom .nav-link { color:#8b949e;border:none;border-bottom:2px solid transparent;border-radius:0;padding:.4rem .65rem;font-size:.8rem; }
+    .sub-tab-custom .nav-link.active { color:#58a6ff;border-bottom-color:#388bfd;background:transparent; }
+    /* Clickable change event row */
+    .event-deeplink { cursor:pointer;color:#58a6ff;font-size:.7rem;border:1px solid #388bfd44;background:#1d3461;padding:1px 5px;border-radius:3px;white-space:nowrap;margin-left:4px; }
+    .event-deeplink:hover { background:#388bfd;color:#fff; }
+    /* Highlight row */
+    .row-highlight { animation: highlight-row 2s ease-out; }
+    @keyframes highlight-row { 0%{background:#3d1f00;} 100%{background:transparent;} }
   </style>
 </head>
 <body>
@@ -58,10 +95,14 @@
 <!-- Navbar -->
 <nav class="navbar navbar-dark" style="background:#161b22;border-bottom:1px solid #30363d;padding-top:.6rem;padding-bottom:.6rem;margin-top:2px;">
   <div class="container-fluid">
-    <span class="navbar-brand mb-0 h1" style="font-size:1rem;">
+    <span class="navbar-brand mb-0 h1" style="font-size:1rem;" onclick="closeDomainDetail()" style="cursor:pointer;">
       <i class="bi bi-shield-lock-fill" style="color:#388bfd;"></i>&nbsp; AssetMonitor
     </span>
     <div class="d-flex align-items-center gap-3">
+      <div id="scan-running-indicator" class="d-none align-items-center gap-2">
+        <div class="spinner-border scan-spinner text-primary" role="status"></div>
+        <span style="font-size:.75rem;color:#58a6ff;" id="scan-running-label">Scanning...</span>
+      </div>
       <span class="text-muted" style="font-size:.75rem;" id="last-scan-label">Fetching...</span>
       <span class="badge bg-secondary" id="refresh-timer" style="font-size:.7rem;">60s</span>
       <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;padding:2px 10px;" onclick="refreshAll(true)">
@@ -71,7 +112,108 @@
   </div>
 </nav>
 
-<div class="container-fluid py-3" style="max-width:1600px;">
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- DOMAIN DETAIL PANEL                                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="domain-detail">
+  <div class="detail-navbar d-flex align-items-center gap-3">
+    <button class="btn btn-sm btn-outline-secondary" onclick="closeDomainDetail()">
+      <i class="bi bi-arrow-left"></i> Back
+    </button>
+    <div class="flex-grow-1">
+      <span id="dd-domain-name" style="font-size:.95rem;font-weight:600;color:#c9d1d9;"></span>
+      <span id="dd-profile-badge" class="ms-2"></span>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="openAssignProfileModal(_ddDomainId)">
+        <i class="bi bi-sliders2"></i> Change Profile
+      </button>
+      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="triggerDomainScan(_ddDomainName)">
+        <i class="bi bi-play-circle"></i> Scan Now
+      </button>
+    </div>
+  </div>
+
+  <div class="container-fluid py-3" style="max-width:1600px;">
+    <!-- Detail stat cards -->
+    <div class="row g-2 mb-3">
+      <div class="col"><div class="stat-card"><div class="stat-num" id="dd-s-subs">–</div><div class="stat-label">Subdomains</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num text-success" id="dd-s-live">–</div><div class="stat-label">Live Hosts</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num text-info" id="dd-s-ports">–</div><div class="stat-label">Open Ports</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num" id="dd-s-events">–</div><div class="stat-label">Events (7d)</div></div></div>
+    </div>
+
+    <!-- Detail sub-tabs -->
+    <ul class="nav sub-tab-custom border-bottom mb-3" style="border-color:#30363d !important;">
+      <li class="nav-item"><a class="nav-link active" data-dtab="dd-subs" href="#" onclick="showDetailTab('dd-subs',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="dd-tab-badge-subs">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-dtab="dd-ports" href="#" onclick="showDetailTab('dd-ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="dd-tab-badge-ports">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-dtab="dd-changes" href="#" onclick="showDetailTab('dd-changes',this);return false;"><i class="bi bi-activity"></i> Changes (7d) <span class="badge bg-secondary ms-1" id="dd-tab-badge-changes">0</span></a></li>
+    </ul>
+
+    <!-- Detail: Subdomains -->
+    <div id="dd-tab-dd-subs">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-globe"></i> Subdomains</span>
+          <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" style="width:120px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="dd-filter-sub-status" onchange="renderDetailSubs()">
+              <option value="">All status</option><option value="alive">Alive</option><option value="dead">Dead</option>
+            </select>
+            <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter FQDN..." id="dd-filter-sub-text" oninput="renderDetailSubs()">
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>FQDN</th><th>Status</th><th>HTTP</th><th>IP</th><th>Open Ports</th><th>Technologies</th><th>Last Seen</th></tr></thead>
+              <tbody id="dd-subs-body"><tr><td colspan="7" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Port Scans -->
+    <div id="dd-tab-dd-ports" class="d-none">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-ethernet"></i> Port Scans — Latest per Host</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>Host</th><th>Status</th><th>Open Ports</th><th>Scan Duration</th><th>Scanned At</th></tr></thead>
+              <tbody id="dd-ports-body"><tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Recent Changes -->
+    <div id="dd-tab-dd-changes" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-activity"></i> Recent Changes (last 7 days)</span>
+          <select class="form-select form-select-sm" style="width:130px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="dd-filter-sev" onchange="renderDetailChanges()">
+            <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
+          </select>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height:500px;overflow-y:auto;">
+            <table class="table table-hover mb-0">
+              <thead style="position:sticky;top:0;z-index:1;"><tr><th>Severity</th><th>Type</th><th>Target</th><th>Description</th><th>Detected</th></tr></thead>
+              <tbody id="dd-changes-body"><tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- MAIN DASHBOARD                                                         -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="main-dashboard" class="container-fluid py-3" style="max-width:1600px;">
 
   <!-- Summary cards -->
   <div class="row g-2 mb-3" id="summary-row">
@@ -89,18 +231,68 @@
 
   <!-- Tabs -->
   <ul class="nav tab-custom border-bottom mb-3" style="border-color:#30363d !important;">
-    <li class="nav-item"><a class="nav-link active" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
+    <li class="nav-item"><a class="nav-link active" data-tab="targets" href="#" onclick="showTab('targets',this);return false;"><i class="bi bi-crosshair"></i> Targets <span class="badge bg-secondary ms-1" id="tab-badge-targets">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="profiles" href="#" onclick="showTab('profiles',this);return false;"><i class="bi bi-sliders2"></i> Profiles <span class="badge bg-secondary ms-1" id="tab-badge-profiles">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="subdomains" href="#" onclick="showTab('subdomains',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="tab-badge-subs">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="headers" href="#" onclick="showTab('headers',this);return false;"><i class="bi bi-shield-check"></i> HTTP Headers <span class="badge bg-secondary ms-1" id="tab-badge-headers">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="changes" href="#" onclick="showTab('changes',this);return false;"><i class="bi bi-activity"></i> Change Events <span class="badge bg-secondary ms-1" id="tab-badge-changes">0</span></a></li>
   </ul>
 
+  <!-- Tab: Targets -->
+  <div id="tab-targets">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-crosshair"></i> Monitored Targets</span>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="triggerFullScan()">
+            <i class="bi bi-play-circle"></i> Scan All Now
+          </button>
+          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" data-bs-toggle="modal" data-bs-target="#addTargetModal">
+            <i class="bi bi-plus-lg"></i> Add Target
+          </button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>Domain</th>
+              <th>Profile</th>
+              <th>Subdomains</th>
+              <th>Live</th>
+              <th>Last Scan</th>
+              <th>Added</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody id="targets-body">
+              <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Profiles -->
+  <div id="tab-profiles" class="d-none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span style="font-size:.8rem;color:#8b949e;">Scan profiles control enumeration techniques, port scan behaviour, and crawl depth. Assign a profile to any domain.</span>
+      <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="openCreateProfileModal()">
+        <i class="bi bi-plus-lg"></i> New Profile
+      </button>
+    </div>
+    <div id="profiles-list">
+      <div class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</div>
+    </div>
+  </div>
+
   <!-- Tab: Port Scans -->
-  <div id="tab-ports">
+  <div id="tab-ports" class="d-none">
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-ethernet"></i> Port Scan Results — Latest per Host</span>
-        <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter host..." id="filter-ports" oninput="filterTable('ports-body','filter-ports')">
+        <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter host..." id="filter-ports" oninput="renderPorts()">
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
@@ -205,20 +397,235 @@
         </div>
       </div>
     </div>
+    <p class="text-muted mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle"></i> Click the <span style="color:#58a6ff;">→</span> link on any event to jump to the relevant page.</p>
   </div>
 
-</div><!-- /container -->
+</div><!-- /main-dashboard -->
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- MODALS                                                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Add Target Modal -->
+<div class="modal fade" id="addTargetModal" tabindex="-1" aria-labelledby="addTargetModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dark">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addTargetModalLabel"><i class="bi bi-plus-circle"></i> Add New Target</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.8rem;color:#8b949e;">TARGET TYPE</label>
+          <select class="form-select" id="at-type" onchange="onTargetTypeChange()">
+            <option value="domain">Root Domain — enumerate + monitor all subdomains</option>
+            <option value="subdomain">Known Subdomain — add directly to monitoring</option>
+            <option value="website">Website URL — crawl and monitor for changes</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.8rem;color:#8b949e;" id="at-value-label">DOMAIN</label>
+          <input type="text" class="form-control" id="at-value" placeholder="example.com" autocomplete="off">
+          <div class="form-text" id="at-value-hint">Enter the root domain to monitor (e.g. example.com)</div>
+        </div>
+
+        <!-- Profile selector — shown for domain type -->
+        <div id="at-profile-section" class="mb-3">
+          <label class="form-label" style="font-size:.8rem;color:#8b949e;">SCAN PROFILE</label>
+          <select class="form-select" id="at-profile-id">
+            <option value="">Default (global config)</option>
+          </select>
+          <div class="form-text">Controls which techniques, port scan mode, and crawl depth to use for this domain.</div>
+        </div>
+
+        <!-- Enumeration technique overrides -->
+        <div id="at-enum-section">
+          <hr class="section-sep">
+          <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Enumeration Technique Overrides <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#484f58;">(override profile for this scan only)</span></div>
+          <div class="row g-2">
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-ct" checked><label class="form-check-label" for="t-ct"><i class="bi bi-patch-check text-info" style="font-size:.75rem;"></i> Certificate Transparency</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-dns" checked><label class="form-check-label" for="t-dns"><i class="bi bi-braces text-warning" style="font-size:.75rem;"></i> DNS Bruteforce</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-passive" checked><label class="form-check-label" for="t-passive"><i class="bi bi-database text-primary" style="font-size:.75rem;"></i> Passive DNS</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-wayback" checked><label class="form-check-label" for="t-wayback"><i class="bi bi-clock-history" style="font-size:.75rem;color:#8b949e;"></i> Wayback Machine</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-ssl" checked><label class="form-check-label" for="t-ssl"><i class="bi bi-shield-lock text-success" style="font-size:.75rem;"></i> SSL SAN Extraction</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-js" checked><label class="form-check-label" for="t-js"><i class="bi bi-filetype-js text-warning" style="font-size:.75rem;"></i> JS File Analysis</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-axfr"><label class="form-check-label" for="t-axfr"><i class="bi bi-arrow-repeat" style="font-size:.75rem;color:#8b949e;"></i> Zone Transfer (AXFR)</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-revip"><label class="form-check-label" for="t-revip"><i class="bi bi-diagram-3" style="font-size:.75rem;color:#8b949e;"></i> Reverse IP Lookup</label></div>
+            </div>
+            <div class="col-6 col-md-4 technique-toggle">
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-dnsrec" checked><label class="form-check-label" for="t-dnsrec"><i class="bi bi-list-nested" style="font-size:.75rem;color:#8b949e;"></i> DNS Records</label></div>
+            </div>
+          </div>
+          <div class="form-text mt-2">Overrides apply to this scan only. Persistent technique selection is controlled by the assigned profile.</div>
+        </div>
+        <hr class="section-sep">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="at-scan-now" checked>
+          <label class="form-check-label" for="at-scan-now" style="font-size:.85rem;">Trigger scan immediately after adding</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="at-submit-btn" onclick="submitAddTarget()">
+          <i class="bi bi-plus-lg"></i> Add Target
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Assign Profile Modal -->
+<div class="modal fade" id="assignProfileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dark">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-sliders2"></i> Assign Scan Profile</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted" style="font-size:.8rem;">Select a scan profile for <strong id="assign-domain-name"></strong>. The profile controls enumeration techniques, port scan mode, and crawl depth for all future scans of this domain.</p>
+        <select class="form-select" id="assign-profile-select">
+          <option value="">Default (global config)</option>
+        </select>
+        <div id="assign-profile-desc" class="mt-2 text-muted" style="font-size:.78rem;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="assign-profile-btn" onclick="submitAssignProfile()">
+          <i class="bi bi-check-lg"></i> Assign Profile
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create / Edit Profile Modal -->
+<div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dark">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="profile-modal-title"><i class="bi bi-plus-circle"></i> New Scan Profile</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.8rem;color:#8b949e;">PROFILE NAME</label>
+            <input type="text" class="form-control" id="pm-name" placeholder="e.g. Bug Bounty Passive">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.8rem;color:#8b949e;">SCAN MODE</label>
+            <select class="form-select" id="pm-mode">
+              <option value="passive">Passive — no active probing</option>
+              <option value="stealth">Stealth — low-and-slow, minimal noise</option>
+              <option value="open" selected>Open — standard active scanning</option>
+              <option value="aggressive">Aggressive — full enumeration + scripts</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label" style="font-size:.8rem;color:#8b949e;">DESCRIPTION</label>
+            <input type="text" class="form-control" id="pm-desc" placeholder="Brief description of when to use this profile">
+          </div>
+        </div>
+        <hr class="section-sep">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Enumeration Techniques</div>
+            <div id="pm-techniques" class="row g-2">
+              <!-- populated by JS -->
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Port Scanning</div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="pm-ports-enabled" checked>
+              <label class="form-check-label" for="pm-ports-enabled" style="font-size:.85rem;">Enable port scanning</label>
+            </div>
+            <div id="pm-port-args-group">
+              <label class="form-label" style="font-size:.8rem;color:#8b949e;">NMAP ARGUMENTS</label>
+              <input type="text" class="form-control form-control-sm" id="pm-port-args" value="-sT -T4 -sV --version-intensity 2 --open" placeholder="-sT -T4 -sV --open">
+              <div class="form-text">Common: -sT -T4 (standard), -sT -T2 (stealth), -sT -T5 -sC (aggressive)</div>
+            </div>
+            <hr class="section-sep">
+            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Web Crawl</div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="pm-crawl-enabled" checked>
+              <label class="form-check-label" for="pm-crawl-enabled" style="font-size:.85rem;">Enable web crawling</label>
+            </div>
+            <div id="pm-crawl-settings-group" class="row g-2">
+              <div class="col-6">
+                <label class="form-label" style="font-size:.8rem;color:#8b949e;">MAX DEPTH</label>
+                <input type="number" class="form-control form-control-sm" id="pm-crawl-depth" value="3" min="0" max="10">
+              </div>
+              <div class="col-6">
+                <label class="form-label" style="font-size:.8rem;color:#8b949e;">MAX PAGES</label>
+                <input type="number" class="form-control form-control-sm" id="pm-crawl-pages" value="500" min="0">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="pm-submit-btn" onclick="submitProfile()">
+          <i class="bi bi-check-lg"></i> Save Profile
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
-let _subdomains = [];
-let _changes    = [];
-let _portsData  = [];
-let _headersData= [];
-let _countdown  = 60;
-let _timer      = null;
+let _subdomains  = [];
+let _changes     = [];
+let _portsData   = [];
+let _headersData = [];
+let _domainsData = [];
+let _profilesData = [];
+let _countdown   = 60;
+let _timer       = null;
+let _scanPollTimer = null;
 const ONE_DAY_MS = 86400000;
+
+// Domain detail state
+let _ddDomainId   = null;
+let _ddDomainName = null;
+let _ddData       = null;
+let _editProfileId = null;  // null = create mode
+let _assignDomainId = null;
+
+// Technique definitions for profile modal
+const TECHNIQUES = [
+  {id:'pm-t-ct',        key:'certificate_transparency', label:'Certificate Transparency', icon:'bi-patch-check text-info'},
+  {id:'pm-t-dns',       key:'dns_bruteforce',           label:'DNS Bruteforce',           icon:'bi-braces text-warning'},
+  {id:'pm-t-passive',   key:'passive_dns',              label:'Passive DNS',              icon:'bi-database text-primary'},
+  {id:'pm-t-wayback',   key:'wayback_machine',          label:'Wayback Machine',          icon:'bi-clock-history'},
+  {id:'pm-t-ssl',       key:'ssl_san_extraction',       label:'SSL SAN Extraction',       icon:'bi-shield-lock text-success'},
+  {id:'pm-t-js',        key:'js_analysis',              label:'JS File Analysis',         icon:'bi-filetype-js text-warning'},
+  {id:'pm-t-axfr',      key:'zone_transfer',            label:'Zone Transfer (AXFR)',     icon:'bi-arrow-repeat'},
+  {id:'pm-t-revip',     key:'reverse_ip',               label:'Reverse IP Lookup',        icon:'bi-diagram-3'},
+  {id:'pm-t-dnsrec',    key:'dns_records',              label:'DNS Records',              icon:'bi-list-nested'},
+];
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 function fmtDate(iso) {
@@ -241,18 +648,26 @@ function statusDot(st) {
   return `<span class="${cls}"></span>${st || 'unknown'}`;
 }
 
-function portBadge(port, svc) {
-  const webPorts  = new Set([80,443,8080,8443,3000,4000,5000,8000,8888,9443]);
-  const dbPorts   = new Set([3306,5432,27017,6379,9200,1521,1433,5984,9042,11211]);
-  const sshPorts  = new Set([22,2222]);
-  const riskyPorts= new Set([23,3389,5900,5901,2375,2376,6379,27017,9200]);
+function portBadge(port, svc, isNew) {
+  const webPorts   = new Set([80,443,8080,8443,3000,4000,5000,8000,8888,9443]);
+  const dbPorts    = new Set([3306,5432,27017,6379,9200,1521,1433,5984,9042,11211]);
+  const sshPorts   = new Set([22,2222]);
+  const riskyPorts = new Set([23,3389,5900,5901,2375,2376,6379,27017,9200,11211]);
   let cls = 'port-other';
   if (riskyPorts.has(port)) cls = 'port-risky';
   else if (sshPorts.has(port)) cls = 'port-ssh';
   else if (webPorts.has(port)) cls = 'port-web';
   else if (dbPorts.has(port)) cls = 'port-db';
   const label = svc ? `${port}/${svc}` : `${port}`;
-  return `<span class="port-badge ${cls}" title="${svc}">${label}</span>`;
+  const extra = isNew ? ' port-new' : '';
+  return `<span class="port-badge ${cls}${extra}" title="${svc}">${label}</span>`;
+}
+
+function profileBadge(mode, name) {
+  if (!mode && !name) return `<span class="profile-default">Default</span>`;
+  const cls = mode ? `profile-${mode}` : 'profile-custom';
+  const icon = {passive:'bi-eye-slash',stealth:'bi-incognito',open:'bi-globe',aggressive:'bi-lightning-charge'}[mode] || 'bi-sliders2';
+  return `<span class="${cls}"><i class="bi ${icon}" style="font-size:.6rem;"></i> ${name || mode}</span>`;
 }
 
 function secHeader(status) {
@@ -267,9 +682,12 @@ function esc(s) {
 
 // ── Tab switching ────────────────────────────────────────────────────────────
 function showTab(name, el) {
-  document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('d-none'));
+  document.querySelectorAll('[id^="tab-"]').forEach(t => {
+    if (t.id.startsWith('tab-') && !t.classList.contains('toast-container')) t.classList.add('d-none');
+  });
   document.querySelectorAll('.tab-custom .nav-link').forEach(a => a.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.remove('d-none');
+  const panel = document.getElementById('tab-' + name);
+  if (panel) panel.classList.remove('d-none');
   el.classList.add('active');
 }
 
@@ -288,15 +706,19 @@ async function loadSummary() {
     if (d.last_port_scan) {
       document.getElementById('last-scan-label').textContent = 'Last scan: ' + fmtDate(d.last_port_scan);
     }
-    // Critical banner
     const banner = document.getElementById('critical-banner');
     if ((d.critical_24h || 0) > 0) {
-      banner.innerHTML = `<div class="alert-critical"><i class="bi bi-exclamation-triangle-fill text-danger"></i>&nbsp; <strong>${d.critical_24h} CRITICAL event${d.critical_24h>1?'s':''}</strong> in the last 24 hours — check the Change Events tab.</div>`;
+      banner.innerHTML = `<div class="alert-critical"><i class="bi bi-exclamation-triangle-fill text-danger"></i>&nbsp; <strong>${d.critical_24h} CRITICAL event${d.critical_24h>1?'s':''}</strong> in the last 24 hours — <a href="#" onclick="showTabByName('changes');return false;" style="color:#f85149;">check Change Events</a>.</div>`;
       banner.classList.remove('d-none');
     } else {
       banner.classList.add('d-none');
     }
   } catch(e) { console.error('summary', e); }
+}
+
+function showTabByName(name) {
+  const link = document.querySelector(`.tab-custom .nav-link[data-tab="${name}"]`);
+  if (link) showTab(name, link);
 }
 
 // ── Port scans ───────────────────────────────────────────────────────────────
@@ -309,7 +731,7 @@ async function loadPorts() {
   } catch(e) { console.error('ports', e); }
 }
 
-function renderPorts() {
+function renderPorts(highlightHost, highlightPort) {
   const filter = (document.getElementById('filter-ports').value || '').toLowerCase();
   const tbody = document.getElementById('ports-body');
   const rows = _portsData.filter(h => !filter || h.host.toLowerCase().includes(filter));
@@ -318,10 +740,11 @@ function renderPorts() {
     return;
   }
   tbody.innerHTML = rows.map(h => {
-    const portBadges = h.ports.map(p => portBadge(p.port, p.service)).join('');
+    const portBadges = h.ports.map(p => portBadge(p.port, p.service, highlightHost === h.host && highlightPort === p.port)).join('');
     const dur = h.scan_duration ? h.scan_duration.toFixed(1) + 's' : '—';
     const notes = h.error ? `<span class="text-danger" title="${esc(h.error)}"><i class="bi bi-exclamation-circle"></i> error</span>` : '';
-    return `<tr>
+    const rowCls = highlightHost === h.host ? 'row-highlight' : '';
+    return `<tr class="${rowCls}">
       <td><code style="color:#58a6ff;">${esc(h.host)}</code></td>
       <td>${statusDot(h.status)}</td>
       <td>${portBadges || '<span class="text-muted">none open</span>'}</td>
@@ -330,6 +753,31 @@ function renderPorts() {
       <td>${notes}</td>
     </tr>`;
   }).join('');
+}
+
+// Deep-link: navigate to Ports tab and highlight a specific host/port
+function gotoPort(host, port) {
+  closeDomainDetail();
+  showTabByName('ports');
+  document.getElementById('filter-ports').value = host;
+  renderPorts(host, port ? parseInt(port) : null);
+  // Scroll to the highlighted row
+  setTimeout(() => {
+    const highlighted = document.querySelector('#ports-body .row-highlight');
+    if (highlighted) highlighted.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 100);
+}
+
+// Deep-link: navigate to Subdomains tab with filter
+function gotoSubdomain(fqdn) {
+  closeDomainDetail();
+  showTabByName('subdomains');
+  document.getElementById('filter-subs-text').value = fqdn || '';
+  renderSubdomains();
+  setTimeout(() => {
+    const first = document.querySelector('#subs-body tr');
+    if (first) first.scrollIntoView({behavior:'smooth', block:'center'});
+  }, 100);
 }
 
 // ── Subdomains ───────────────────────────────────────────────────────────────
@@ -347,40 +795,39 @@ function renderSubdomains() {
   const textFilter   = (document.getElementById('filter-subs-text').value || '').toLowerCase();
   const tbody = document.getElementById('subs-body');
   const now = Date.now();
-
   let rows = _subdomains;
   if (statusFilter) rows = rows.filter(s => s.status === statusFilter);
   if (textFilter)   rows = rows.filter(s => s.fqdn.toLowerCase().includes(textFilter));
-
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No subdomains found.</td></tr>';
     return;
   }
+  tbody.innerHTML = rows.map(s => buildSubRow(s, now)).join('');
+}
 
-  tbody.innerHTML = rows.map(s => {
-    const isNew = s.first_seen && (now - new Date(s.first_seen)) < ONE_DAY_MS;
-    const newTag = isNew ? '<span class="new-badge">NEW</span>' : '';
-    const takeoverTag = s.takeover_vulnerable ? '<span class="takeover-badge"><i class="bi bi-exclamation-triangle-fill"></i> TAKEOVER</span>' : '';
-    const techs = (s.technologies||[]).slice(0,5).map(t => {
-      const name = typeof t === 'object' ? t.name : t;
-      const ver  = typeof t === 'object' && t.version ? t.version : '';
-      const label = ver ? `${name} <span style="opacity:.7;font-size:.6rem;">${esc(ver)}</span>` : esc(name);
-      return `<span class="badge bg-secondary me-1" style="font-size:.65rem;" title="${esc(name)}${ver ? ' ' + esc(ver) : ''}">${label}</span>`;
-    }).join('');
-    const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join('<br>');
-    const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
-    const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
-    return `<tr>
-      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}${takeoverTag}</td>
-      <td>${statusDot(s.status)}</td>
-      <td>${httpCode}</td>
-      <td>${ips || '<span class="text-muted">—</span>'}</td>
-      <td>${ports || '<span class="text-muted">—</span>'}</td>
-      <td>${techs || '<span class="text-muted">—</span>'}</td>
-      <td class="text-muted" style="font-size:.75rem;">${s.first_seen ? new Date(s.first_seen).toLocaleDateString() : '—'}</td>
-      <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
-    </tr>`;
+function buildSubRow(s, now) {
+  const isNew = s.first_seen && (now - new Date(s.first_seen)) < ONE_DAY_MS;
+  const newTag = isNew ? '<span class="new-badge">NEW</span>' : '';
+  const takeoverTag = s.takeover_vulnerable ? '<span class="takeover-badge"><i class="bi bi-exclamation-triangle-fill"></i> TAKEOVER</span>' : '';
+  const techs = (s.technologies||[]).slice(0,5).map(t => {
+    const name = typeof t === 'object' ? t.name : t;
+    const ver  = typeof t === 'object' && t.version ? t.version : '';
+    const label = ver ? `${name} <span style="opacity:.7;font-size:.6rem;">${esc(ver)}</span>` : esc(name);
+    return `<span class="badge bg-secondary me-1" style="font-size:.65rem;" title="${esc(name)}${ver?' '+esc(ver):''}">${label}</span>`;
   }).join('');
+  const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join('<br>');
+  const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
+  const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
+  return `<tr>
+    <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}${takeoverTag}</td>
+    <td>${statusDot(s.status)}</td>
+    <td>${httpCode}</td>
+    <td>${ips || '<span class="text-muted">—</span>'}</td>
+    <td>${ports || '<span class="text-muted">—</span>'}</td>
+    <td>${techs || '<span class="text-muted">—</span>'}</td>
+    <td class="text-muted" style="font-size:.75rem;">${s.first_seen ? new Date(s.first_seen).toLocaleDateString() : '—'}</td>
+    <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
+  </tr>`;
 }
 
 // ── HTTP Headers ─────────────────────────────────────────────────────────────
@@ -430,15 +877,32 @@ async function loadChanges(hours) {
   } catch(e) { console.error('changes', e); }
 }
 
-function reloadChanges() {
-  loadChanges(document.getElementById('filter-hours').value);
+function reloadChanges() { loadChanges(document.getElementById('filter-hours').value); }
+
+function eventDeepLink(e) {
+  // Returns an HTML string for a deep-link button based on event type
+  const t = e.event_type;
+  const dd = e.diff_data || {};
+  if (t === 'PORT_OPENED') {
+    const port = dd.port || '';
+    return `<span class="event-deeplink" onclick="gotoPort('${esc(e.target)}',${port || 'null'})" title="Jump to Port Scans">→ Ports</span>`;
+  }
+  if (t === 'PORT_CLOSED') {
+    return `<span class="event-deeplink" onclick="gotoPort('${esc(e.target)}',null)" title="Jump to Port Scans">→ Ports</span>`;
+  }
+  if (t === 'NEW_SUBDOMAIN' || t === 'SUBDOMAIN_CAME_ALIVE' || t === 'SUBDOMAIN_WENT_DEAD') {
+    return `<span class="event-deeplink" onclick="gotoSubdomain('${esc(e.target)}')" title="Jump to Subdomains">→ Subs</span>`;
+  }
+  if (t === 'CONTENT_CHANGE' || t === 'DOM_CHANGE' || t === 'ENDPOINT_NEW' || t === 'ENDPOINT_REMOVED') {
+    return `<span class="event-deeplink" onclick="gotoSubdomain('${esc(e.target)}')" title="Jump to Subdomains">→ Subs</span>`;
+  }
+  return '';
 }
 
 function renderChanges() {
   const sevFilter    = document.getElementById('filter-sev').value;
   const targetFilter = (document.getElementById('filter-target').value || '').toLowerCase();
   const tbody = document.getElementById('changes-body');
-
   const SEV_ORDER = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,INFO:4};
   let rows = _changes;
   if (sevFilter) {
@@ -446,19 +910,16 @@ function renderChanges() {
     rows = rows.filter(e => (SEV_ORDER[e.severity] ?? 99) <= minLevel);
   }
   if (targetFilter) rows = rows.filter(e => e.target.toLowerCase().includes(targetFilter));
-
   if (!rows.length) {
     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No events found.</td></tr>';
     return;
   }
-
   tbody.innerHTML = rows.map(e => {
-    const alerted = e.alerted
-      ? '<i class="bi bi-check-circle-fill text-success"></i>'
-      : '<i class="bi bi-dash text-muted"></i>';
+    const alerted = e.alerted ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-dash text-muted"></i>';
+    const link = eventDeepLink(e);
     return `<tr>
       <td>${sevBadge(e.severity)}</td>
-      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code></td>
+      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code>${link}</td>
       <td><code style="font-size:.75rem;color:#58a6ff;">${esc(e.target)}</code></td>
       <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.description)}">${esc(e.description)}</td>
       <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
@@ -467,13 +928,397 @@ function renderChanges() {
   }).join('');
 }
 
-// ── Filter helper for tables with text rows ──────────────────────────────────
-function filterTable(tbodyId, inputId) {
-  if (tbodyId === 'ports-body') { renderPorts(); return; }
-  const text = document.getElementById(inputId).value.toLowerCase();
-  document.querySelectorAll('#' + tbodyId + ' tr').forEach(tr => {
-    tr.style.display = tr.textContent.toLowerCase().includes(text) ? '' : 'none';
+// ── Profiles ─────────────────────────────────────────────────────────────────
+async function loadProfiles() {
+  try {
+    const r = await fetch('/api/profiles');
+    _profilesData = await r.json();
+    document.getElementById('tab-badge-profiles').textContent = _profilesData.length;
+    renderProfiles();
+    populateProfileSelects();
+  } catch(e) { console.error('profiles', e); }
+}
+
+function renderProfiles() {
+  const container = document.getElementById('profiles-list');
+  if (!_profilesData.length) {
+    container.innerHTML = '<div class="text-muted">No profiles found.</div>';
+    return;
+  }
+  const builtins = _profilesData.filter(p => p.is_builtin);
+  const customs  = _profilesData.filter(p => !p.is_builtin);
+
+  const modeColors = {passive:'#3fb950',stealth:'#7c6aff',open:'#58a6ff',aggressive:'#f85149'};
+  const modeIcons  = {passive:'bi-eye-slash',stealth:'bi-incognito',open:'bi-globe',aggressive:'bi-lightning-charge'};
+
+  function profileCard(p) {
+    const mode   = (p.settings || {}).scan_mode || 'open';
+    const color  = modeColors[mode] || '#8b949e';
+    const icon   = modeIcons[mode]  || 'bi-sliders2';
+    const s      = p.settings || {};
+    const eTechs = s.enumeration || {};
+    const techOn = Object.entries(eTechs).filter(([,v]) => v).map(([k]) => k.replace(/_/g,' ')).join(', ') || 'none';
+    const portEn = (s.port_scanning || {}).enabled !== false;
+    const crawlEn= (s.crawl || {}).enabled !== false;
+    const editBtn = p.is_builtin ? '' : `
+      <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="openEditProfileModal(${p.id})"><i class="bi bi-pencil"></i></button>
+      <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;" onclick="deleteProfile(${p.id},'${esc(p.name)}')"><i class="bi bi-trash3"></i></button>`;
+    return `<div class="profile-card ${p.is_builtin ? 'builtin' : 'custom'} mb-3">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <div>
+          <i class="bi ${icon}" style="color:${color};margin-right:6px;"></i>
+          <strong style="font-size:.9rem;">${esc(p.name)}</strong>
+          <span class="ms-2 profile-${mode}" style="font-size:.65rem;">${mode.toUpperCase()}</span>
+          ${p.is_builtin ? '<span class="ms-1 badge bg-secondary" style="font-size:.6rem;">built-in</span>' : ''}
+        </div>
+        <div>${editBtn}</div>
+      </div>
+      <p class="text-muted mb-2" style="font-size:.78rem;">${esc(p.description || '')}</p>
+      <div class="row g-2" style="font-size:.72rem;">
+        <div class="col-auto"><span class="text-muted">Enumeration:</span> <span style="color:#c9d1d9;">${esc(techOn)}</span></div>
+        <div class="col-auto"><span class="text-muted">Port scan:</span> <span style="color:${portEn?'#3fb950':'#8b949e'};">${portEn ? (s.port_scanning||{}).arguments||'enabled' : 'disabled'}</span></div>
+        <div class="col-auto"><span class="text-muted">Crawl:</span> <span style="color:${crawlEn?'#3fb950':'#8b949e'};">${crawlEn ? `depth ${(s.crawl||{}).max_depth||3}, ${(s.crawl||{}).max_pages||500} pages` : 'disabled'}</span></div>
+      </div>
+    </div>`;
+  }
+
+  let html = '';
+  if (builtins.length) {
+    html += '<div class="section-title mb-2">Built-in Profiles</div>';
+    html += '<div class="row g-3 mb-4">';
+    builtins.forEach(p => { html += `<div class="col-lg-6">${profileCard(p)}</div>`; });
+    html += '</div>';
+  }
+  if (customs.length) {
+    html += '<div class="section-title mb-2">Custom Profiles</div>';
+    html += '<div class="row g-3">';
+    customs.forEach(p => { html += `<div class="col-lg-6">${profileCard(p)}</div>`; });
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
+function populateProfileSelects() {
+  const opts = ['<option value="">Default (global config)</option>'];
+  _profilesData.forEach(p => {
+    const mode = (p.settings || {}).scan_mode || '';
+    opts.push(`<option value="${p.id}">${esc(p.name)}${mode ? ' — ' + mode : ''}</option>`);
   });
+  ['at-profile-id','assign-profile-select'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts.join('');
+  });
+}
+
+// ── Targets ──────────────────────────────────────────────────────────────────
+async function loadTargets() {
+  try {
+    const r = await fetch('/api/domains');
+    _domainsData = await r.json();
+    document.getElementById('tab-badge-targets').textContent = _domainsData.length;
+    renderTargets();
+  } catch(e) { console.error('targets', e); }
+}
+
+function renderTargets() {
+  const tbody = document.getElementById('targets-body');
+  if (!_domainsData.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-crosshair"></i> No targets added yet. Click <strong>Add Target</strong> to get started.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _domainsData.map(d => {
+    const livePct = d.total_subs > 0 ? Math.round(d.live_subs / d.total_subs * 100) : 0;
+    const liveColor = livePct > 66 ? 'text-success' : livePct > 33 ? 'text-warning' : 'text-danger';
+    const lastScan = d.last_scan
+      ? `<span style="font-size:.75rem;">${fmtDate(d.last_scan)}</span>`
+      : '<span class="text-muted" style="font-size:.75rem;">Never</span>';
+    const profBadge = profileBadge(d.profile_mode, d.profile_name);
+    return `<tr>
+      <td>
+        <a href="#" onclick="openDomainDetail(${d.id},'${esc(d.domain)}');return false;" style="color:#58a6ff;text-decoration:none;">
+          <code style="font-size:.85rem;">${esc(d.domain)}</code>
+        </a>
+      </td>
+      <td>${profBadge}</td>
+      <td><span class="domain-stat">${d.total_subs}</span></td>
+      <td><span class="${liveColor} domain-stat">${d.live_subs}</span></td>
+      <td>${lastScan}</td>
+      <td class="text-muted domain-stat">${d.added_at ? new Date(d.added_at).toLocaleDateString() : '—'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="openDomainDetail(${d.id},'${esc(d.domain)}')" title="View details">
+          <i class="bi bi-box-arrow-up-right"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="openAssignProfileModal(${d.id})" title="Change profile">
+          <i class="bi bi-sliders2"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-primary me-1" style="font-size:.7rem;padding:2px 8px;" onclick="triggerDomainScan('${esc(d.domain)}')">
+          <i class="bi bi-play-fill"></i> Scan
+        </button>
+        <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 8px;" onclick="deleteDomain(${d.id},'${esc(d.domain)}')">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Domain detail panel ───────────────────────────────────────────────────────
+async function openDomainDetail(domainId, domainName) {
+  _ddDomainId   = domainId;
+  _ddDomainName = domainName;
+  document.getElementById('dd-domain-name').textContent = domainName;
+  document.getElementById('dd-profile-badge').innerHTML = '';
+  // Reset to first sub-tab
+  showDetailTab('dd-subs', document.querySelector('.sub-tab-custom .nav-link'));
+  document.getElementById('domain-detail').classList.add('visible');
+  document.getElementById('main-dashboard').style.display = 'none';
+
+  // Fetch detail data
+  try {
+    const r = await fetch(`/api/domains/${domainId}/details`);
+    _ddData = await r.json();
+    if (r.ok) {
+      const dom = _ddData.domain;
+      document.getElementById('dd-profile-badge').innerHTML = profileBadge(dom.profile_mode, dom.profile_name);
+      // Stats
+      document.getElementById('dd-s-subs').textContent    = _ddData.stats.total_subs;
+      document.getElementById('dd-s-live').textContent    = _ddData.stats.live_subs;
+      document.getElementById('dd-s-ports').textContent   = _ddData.stats.open_ports;
+      document.getElementById('dd-s-events').textContent  = _ddData.stats.events_7d;
+      // Badges
+      document.getElementById('dd-tab-badge-subs').textContent    = _ddData.subdomains.length;
+      document.getElementById('dd-tab-badge-ports').textContent   = _ddData.port_scans.length;
+      document.getElementById('dd-tab-badge-changes').textContent = _ddData.recent_changes.length;
+      renderDetailSubs();
+      renderDetailPorts();
+      renderDetailChanges();
+    }
+  } catch(e) { console.error('domain-detail', e); }
+}
+
+function closeDomainDetail() {
+  document.getElementById('domain-detail').classList.remove('visible');
+  document.getElementById('main-dashboard').style.display = '';
+  _ddDomainId   = null;
+  _ddDomainName = null;
+  _ddData       = null;
+}
+
+function showDetailTab(name, el) {
+  document.querySelectorAll('[id^="dd-tab-"]').forEach(t => t.classList.add('d-none'));
+  document.querySelectorAll('.sub-tab-custom .nav-link').forEach(a => a.classList.remove('active'));
+  const panel = document.getElementById('dd-tab-' + name);
+  if (panel) panel.classList.remove('d-none');
+  if (el) el.classList.add('active');
+}
+
+function renderDetailSubs() {
+  if (!_ddData) return;
+  const statusFilter = document.getElementById('dd-filter-sub-status').value;
+  const textFilter   = (document.getElementById('dd-filter-sub-text').value || '').toLowerCase();
+  const tbody = document.getElementById('dd-subs-body');
+  const now = Date.now();
+  let rows = _ddData.subdomains;
+  if (statusFilter) rows = rows.filter(s => s.status === statusFilter);
+  if (textFilter)   rows = rows.filter(s => s.fqdn.toLowerCase().includes(textFilter));
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No subdomains.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(s => {
+    const isNew = s.first_seen && (now - new Date(s.first_seen)) < ONE_DAY_MS;
+    const newTag = isNew ? '<span class="new-badge">NEW</span>' : '';
+    const techs = (s.technologies||[]).slice(0,4).map(t => {
+      const name = typeof t === 'object' ? t.name : t;
+      return `<span class="badge bg-secondary me-1" style="font-size:.65rem;">${esc(name)}</span>`;
+    }).join('');
+    const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
+    const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
+    const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join(' ');
+    return `<tr>
+      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}</td>
+      <td>${statusDot(s.status)}</td>
+      <td>${httpCode}</td>
+      <td>${ips || '—'}</td>
+      <td>${ports || '<span class="text-muted">—</span>'}</td>
+      <td>${techs || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderDetailPorts() {
+  if (!_ddData) return;
+  const tbody = document.getElementById('dd-ports-body');
+  if (!_ddData.port_scans.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No port scan data yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _ddData.port_scans.map(ps => {
+    const badges = (ps.ports||[]).map(p => portBadge(p.port, p.service)).join('');
+    return `<tr>
+      <td><code style="color:#58a6ff;">${esc(ps.host)}</code></td>
+      <td>${statusDot(ps.status)}</td>
+      <td>${badges || '<span class="text-muted">none open</span>'}</td>
+      <td class="text-muted">${ps.scan_duration ? ps.scan_duration.toFixed(1)+'s' : '—'}</td>
+      <td class="text-muted">${fmtDate(ps.scanned_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderDetailChanges() {
+  if (!_ddData) return;
+  const sev = document.getElementById('dd-filter-sev').value;
+  const SEV_ORDER = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,INFO:4};
+  let rows = _ddData.recent_changes;
+  if (sev) rows = rows.filter(e => (SEV_ORDER[e.severity] ?? 99) <= (SEV_ORDER[sev] ?? 99));
+  const tbody = document.getElementById('dd-changes-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No recent changes.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(e => {
+    return `<tr>
+      <td>${sevBadge(e.severity)}</td>
+      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code></td>
+      <td><code style="font-size:.75rem;color:#58a6ff;">${esc(e.target)}</code></td>
+      <td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.description)}">${esc(e.description)}</td>
+      <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Assign Profile Modal ──────────────────────────────────────────────────────
+function openAssignProfileModal(domainId) {
+  _assignDomainId = domainId;
+  const dom = _domainsData.find(d => d.id === domainId) || {};
+  document.getElementById('assign-domain-name').textContent = dom.domain || ('domain #' + domainId);
+  const sel = document.getElementById('assign-profile-select');
+  sel.value = dom.profile_id || '';
+  updateAssignDesc();
+  new bootstrap.Modal(document.getElementById('assignProfileModal')).show();
+}
+
+function updateAssignDesc() {
+  const selId = parseInt(document.getElementById('assign-profile-select').value) || null;
+  const prof = _profilesData.find(p => p.id === selId);
+  document.getElementById('assign-profile-desc').textContent = prof ? (prof.description || '') : 'Uses the global scan configuration from config.yaml.';
+}
+document.getElementById('assign-profile-select').addEventListener('change', updateAssignDesc);
+
+async function submitAssignProfile() {
+  const profileId = parseInt(document.getElementById('assign-profile-select').value) || null;
+  const btn = document.getElementById('assign-profile-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/targets/domain/${_assignDomainId}`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({profile_id: profileId}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    bootstrap.Modal.getInstance(document.getElementById('assignProfileModal')).hide();
+    showToast('Profile updated', 'success');
+    await Promise.all([loadTargets(), loadProfiles()]);
+    // Refresh detail panel if it's open for this domain
+    if (_ddDomainId === _assignDomainId) openDomainDetail(_ddDomainId, _ddDomainName);
+  } catch(e) {
+    showToast('Failed: ' + e.message, 'danger');
+  } finally { btn.disabled = false; }
+}
+
+// ── Create / Edit Profile Modal ───────────────────────────────────────────────
+function _buildTechniqueCheckboxes(settings) {
+  const enumSettings = (settings || {}).enumeration || {};
+  return TECHNIQUES.map(t => {
+    const checked = t.key in enumSettings ? enumSettings[t.key] : true;
+    return `<div class="col-12">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="${t.id}" ${checked ? 'checked' : ''}>
+        <label class="form-check-label" for="${t.id}" style="font-size:.8rem;"><i class="bi ${t.icon}" style="font-size:.75rem;"></i> ${t.label}</label>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openCreateProfileModal() {
+  _editProfileId = null;
+  document.getElementById('profile-modal-title').innerHTML = '<i class="bi bi-plus-circle"></i> New Scan Profile';
+  document.getElementById('pm-name').value    = '';
+  document.getElementById('pm-desc').value    = '';
+  document.getElementById('pm-mode').value    = 'open';
+  document.getElementById('pm-ports-enabled').checked = true;
+  document.getElementById('pm-port-args').value = '-sT -T4 -sV --version-intensity 2 --open';
+  document.getElementById('pm-crawl-enabled').checked = true;
+  document.getElementById('pm-crawl-depth').value = '3';
+  document.getElementById('pm-crawl-pages').value = '500';
+  document.getElementById('pm-techniques').innerHTML = _buildTechniqueCheckboxes(null);
+  new bootstrap.Modal(document.getElementById('profileModal')).show();
+}
+
+function openEditProfileModal(profileId) {
+  const p = _profilesData.find(x => x.id === profileId);
+  if (!p || p.is_builtin) { showToast('Cannot edit built-in profiles', 'warning'); return; }
+  _editProfileId = profileId;
+  const s = p.settings || {};
+  document.getElementById('profile-modal-title').innerHTML = '<i class="bi bi-pencil"></i> Edit Profile';
+  document.getElementById('pm-name').value = p.name;
+  document.getElementById('pm-desc').value = p.description || '';
+  document.getElementById('pm-mode').value = s.scan_mode || 'open';
+  const ps = s.port_scanning || {};
+  document.getElementById('pm-ports-enabled').checked = ps.enabled !== false;
+  document.getElementById('pm-port-args').value = ps.arguments || '-sT -T4 --open';
+  const cs = s.crawl || {};
+  document.getElementById('pm-crawl-enabled').checked = cs.enabled !== false;
+  document.getElementById('pm-crawl-depth').value = cs.max_depth ?? 3;
+  document.getElementById('pm-crawl-pages').value = cs.max_pages ?? 500;
+  document.getElementById('pm-techniques').innerHTML = _buildTechniqueCheckboxes(s);
+  new bootstrap.Modal(document.getElementById('profileModal')).show();
+}
+
+async function submitProfile() {
+  const name = document.getElementById('pm-name').value.trim();
+  if (!name) { showToast('Profile name is required', 'warning'); return; }
+  const enumSettings = {};
+  TECHNIQUES.forEach(t => { enumSettings[t.key] = document.getElementById(t.id).checked; });
+  const settings = {
+    scan_mode: document.getElementById('pm-mode').value,
+    enumeration: enumSettings,
+    port_scanning: {
+      enabled: document.getElementById('pm-ports-enabled').checked,
+      arguments: document.getElementById('pm-port-args').value.trim(),
+    },
+    crawl: {
+      enabled: document.getElementById('pm-crawl-enabled').checked,
+      max_depth: parseInt(document.getElementById('pm-crawl-depth').value) || 3,
+      max_pages: parseInt(document.getElementById('pm-crawl-pages').value) || 500,
+    },
+  };
+  const body = {name, description: document.getElementById('pm-desc').value.trim(), settings};
+  const btn = document.getElementById('pm-submit-btn');
+  btn.disabled = true;
+  try {
+    const url = _editProfileId ? `/api/profiles/${_editProfileId}` : '/api/profiles';
+    const method = _editProfileId ? 'PUT' : 'POST';
+    const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
+    showToast(_editProfileId ? 'Profile updated' : 'Profile created', 'success');
+    await loadProfiles();
+  } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteProfile(id, name) {
+  if (!confirm(`Delete profile "${name}"?\nDomains using this profile will revert to Default.`)) return;
+  try {
+    const r = await fetch(`/api/profiles/${id}`, {method:'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showToast(`Deleted profile: ${name}`, 'success');
+    await Promise.all([loadProfiles(), loadTargets()]);
+  } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
 }
 
 // ── Auto-refresh countdown ───────────────────────────────────────────────────
@@ -490,11 +1335,188 @@ function startCountdown() {
 }
 
 async function refreshAll(manual) {
-  if (manual) {
-    document.getElementById('refresh-timer').textContent = '…';
-  }
-  await Promise.all([loadSummary(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges()]);
+  if (manual) document.getElementById('refresh-timer').textContent = '…';
+  await Promise.all([loadSummary(), loadTargets(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges(), loadProfiles()]);
   startCountdown();
+  // Refresh domain detail if open
+  if (_ddDomainId) openDomainDetail(_ddDomainId, _ddDomainName);
+}
+
+// ── Add Target modal ─────────────────────────────────────────────────────────
+function onTargetTypeChange() {
+  const t = document.getElementById('at-type').value;
+  const enumSection    = document.getElementById('at-enum-section');
+  const profileSection = document.getElementById('at-profile-section');
+  const label = document.getElementById('at-value-label');
+  const hint  = document.getElementById('at-value-hint');
+  const input = document.getElementById('at-value');
+  if (t === 'domain') {
+    enumSection.style.display = '';
+    profileSection.style.display = '';
+    label.textContent = 'DOMAIN';
+    hint.textContent  = 'Root domain to enumerate (e.g. example.com)';
+    input.placeholder = 'example.com';
+  } else if (t === 'subdomain') {
+    enumSection.style.display = 'none';
+    profileSection.style.display = 'none';
+    label.textContent = 'SUBDOMAIN (FQDN)';
+    hint.textContent  = 'Fully qualified subdomain (e.g. api.example.com)';
+    input.placeholder = 'api.example.com';
+  } else {
+    enumSection.style.display = 'none';
+    profileSection.style.display = 'none';
+    label.textContent = 'WEBSITE URL';
+    hint.textContent  = 'Full URL including scheme (e.g. https://example.com)';
+    input.placeholder = 'https://example.com';
+  }
+}
+
+async function submitAddTarget() {
+  const type    = document.getElementById('at-type').value;
+  const value   = document.getElementById('at-value').value.trim();
+  const scanNow = document.getElementById('at-scan-now').checked;
+  const btn     = document.getElementById('at-submit-btn');
+  if (!value) { showToast('Please enter a target value', 'warning'); return; }
+  const techniques = {
+    certificate_transparency: document.getElementById('t-ct').checked,
+    dns_bruteforce:           document.getElementById('t-dns').checked,
+    passive_dns:              document.getElementById('t-passive').checked,
+    wayback_machine:          document.getElementById('t-wayback').checked,
+    ssl_san_extraction:       document.getElementById('t-ssl').checked,
+    js_analysis:              document.getElementById('t-js').checked,
+    zone_transfer:            document.getElementById('t-axfr').checked,
+    reverse_ip:               document.getElementById('t-revip').checked,
+    dns_records:              document.getElementById('t-dnsrec').checked,
+  };
+  const profileId = parseInt(document.getElementById('at-profile-id').value) || null;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Adding...';
+  try {
+    const r = await fetch('/api/targets', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, value, scan_now: scanNow, techniques}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    // Assign profile if one was selected and this is a domain
+    if (type === 'domain' && profileId && d.id) {
+      await fetch(`/api/targets/domain/${d.id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({profile_id: profileId}),
+      });
+    }
+
+    bootstrap.Modal.getInstance(document.getElementById('addTargetModal')).hide();
+    document.getElementById('at-value').value = '';
+    const msg = d.scan_triggered ? `Added ${type} "${value}" — scan started` : `Added ${type} "${value}"`;
+    showToast(msg, 'success');
+    await Promise.all([loadTargets(), loadSummary()]);
+    if (d.scan_triggered) startScanStatusPolling();
+  } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus-lg"></i> Add Target';
+  }
+}
+
+// ── Domain scan / delete ─────────────────────────────────────────────────────
+async function deleteDomain(id, name) {
+  if (!confirm(`Delete domain "${name}" and all its subdomains?\n\nThis cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/targets/domain/${id}`, {method: 'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showToast(`Deleted domain: ${name}`, 'success');
+    if (_ddDomainId === id) closeDomainDetail();
+    await loadTargets();
+    await loadSummary();
+  } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
+}
+
+async function triggerDomainScan(domain) {
+  try {
+    const r = await fetch('/api/scan/trigger', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({domain}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    showToast(`Scan started for ${domain}`, 'info');
+    startScanStatusPolling();
+  } catch(e) { showToast('Scan trigger failed: ' + e.message, 'danger'); }
+}
+
+async function triggerFullScan() {
+  try {
+    const r = await fetch('/api/scan/trigger', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({}),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    showToast('Full scan started for all targets', 'info');
+    startScanStatusPolling();
+  } catch(e) { showToast('Scan trigger failed: ' + e.message, 'danger'); }
+}
+
+// ── Scan status polling ───────────────────────────────────────────────────────
+async function loadScanStatus() {
+  try {
+    const r = await fetch('/api/scan/status');
+    const s = await r.json();
+    const indicator = document.getElementById('scan-running-indicator');
+    const label     = document.getElementById('scan-running-label');
+    if (s.running) {
+      indicator.classList.remove('d-none');
+      indicator.classList.add('d-flex');
+      label.textContent = s.domain ? `Scanning ${s.domain}…` : 'Full scan running…';
+    } else {
+      indicator.classList.add('d-none');
+      indicator.classList.remove('d-flex');
+      if (_scanPollTimer && !s.running) {
+        clearInterval(_scanPollTimer);
+        _scanPollTimer = null;
+        await refreshAll(false);
+        if (s.last_events > 0) {
+          showToast(`Scan complete — ${s.last_subs_found} subdomains, ${s.last_events} events`, 'success');
+        }
+      }
+    }
+  } catch(e) { console.error('scan-status', e); }
+}
+
+function startScanStatusPolling() {
+  if (_scanPollTimer) return;
+  loadScanStatus();
+  _scanPollTimer = setInterval(loadScanStatus, 4000);
+}
+
+// ── Toast notifications ──────────────────────────────────────────────────────
+function showToast(message, type = 'info') {
+  const colorMap = {success:'#3fb950',danger:'#f85149',warning:'#e3b341',info:'#58a6ff'};
+  const iconMap  = {success:'check-circle-fill',danger:'x-circle-fill',warning:'exclamation-triangle-fill',info:'info-circle-fill'};
+  const id = 'toast-' + Date.now();
+  const color = colorMap[type] || colorMap.info;
+  const icon  = iconMap[type]  || iconMap.info;
+  const html = `<div id="${id}" class="toast align-items-center border-0 mb-2" role="alert" style="background:#1c2128;border:1px solid #30363d!important;min-width:280px;">
+    <div class="d-flex">
+      <div class="toast-body d-flex align-items-center gap-2" style="font-size:.82rem;color:#c9d1d9;">
+        <i class="bi bi-${icon}" style="color:${color};flex-shrink:0;"></i>
+        ${esc(message)}
+      </div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>`;
+  const container = document.getElementById('toast-container');
+  container.insertAdjacentHTML('beforeend', html);
+  const el = document.getElementById(id);
+  const toast = new bootstrap.Toast(el, {delay: 4000});
+  toast.show();
+  el.addEventListener('hidden.bs.toast', () => el.remove());
 }
 
 // ── Live filter bindings ─────────────────────────────────────────────────────
@@ -502,6 +1524,7 @@ document.getElementById('filter-subs-text').addEventListener('input', renderSubd
 document.getElementById('filter-target').addEventListener('input', renderChanges);
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
+loadScanStatus();
 refreshAll(true);
 </script>
 </body>

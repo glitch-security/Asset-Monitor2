@@ -25,6 +25,26 @@ from src.notifications.manager import NotificationManager
 logger = logging.getLogger(__name__)
 
 _DOMAINS_FILE = "domains.txt"
+
+
+def _apply_profile_to_config(config: AppConfig, settings: dict) -> None:
+    """Mutate *config* in-place to reflect the given profile settings dict."""
+    enum_settings = settings.get("enumeration") or {}
+    for k, v in enum_settings.items():
+        if hasattr(config.enumeration.techniques, k):
+            setattr(config.enumeration.techniques, k, bool(v))
+
+    port_settings = settings.get("port_scanning") or {}
+    if "enabled" in port_settings:
+        config.port_scanning.enabled = bool(port_settings["enabled"])
+    if port_settings.get("arguments"):
+        config.port_scanning.scan_arguments = port_settings["arguments"]
+
+    crawl_settings = settings.get("crawl") or {}
+    if "max_depth" in crawl_settings:
+        config.scan.max_crawl_depth = int(crawl_settings["max_depth"])
+    if "max_pages" in crawl_settings:
+        config.scan.max_pages_per_domain = int(crawl_settings["max_pages"])
 _SUBDOMAINS_FILE = "subdomains.txt"
 _WEBSITES_FILE = "websites.txt"
 
@@ -160,7 +180,17 @@ class SchedManager:
 
         for dom in all_domains:
             logger.info("Scanning domain: %s", dom.domain)
+            orig_config = self._config
             try:
+                if dom.profile_id:
+                    profile = self._db.get_profile(dom.profile_id)
+                    if profile and profile.settings:
+                        import copy
+                        self._config = copy.deepcopy(orig_config)
+                        _apply_profile_to_config(self._config, profile.settings)
+                        logger.info(
+                            "Domain %s using profile %r", dom.domain, profile.name
+                        )
                 new_events, sub_count = await self._scan_domain(dom)
                 total_subdomains_found += sub_count
                 all_new_events.extend(new_events)
@@ -168,6 +198,8 @@ class SchedManager:
                 logger.error(
                     "Error scanning domain %s: %s", dom.domain, exc, exc_info=True
                 )
+            finally:
+                self._config = orig_config
 
         # ----------------------------------------------------------------
         # 3. Known subdomains from subdomains.txt
@@ -486,3 +518,64 @@ class SchedManager:
 
         # Remove empty buckets
         return {k: v for k, v in grouped.items() if v}
+
+    async def run_domain_scan(
+        self,
+        domain_name: str,
+        technique_overrides: Optional[dict] = None,
+    ) -> tuple[int, int]:
+        """Run enumeration + verification for a single domain (web-triggered).
+
+        Args:
+            domain_name:         Root domain to scan. Added to DB if not present.
+            technique_overrides: Optional dict of technique flag overrides, e.g.
+                                 ``{"dns_bruteforce": False}``.  Applied on top of
+                                 the global config for this scan only.
+
+        Returns:
+            ``(subdomains_found, events_generated)``
+        """
+        import copy
+
+        domain = self._db.add_domain(domain_name)
+
+        orig_config = self._config
+        if domain.profile_id or technique_overrides:
+            self._config = copy.deepcopy(orig_config)
+            # Apply domain profile first, then technique_overrides on top
+            if domain.profile_id:
+                profile = self._db.get_profile(domain.profile_id)
+                if profile and profile.settings:
+                    _apply_profile_to_config(self._config, profile.settings)
+                    logger.info("Using profile %r for domain %s", profile.name, domain_name)
+            if technique_overrides:
+                techniques = self._config.enumeration.techniques
+                for k, v in technique_overrides.items():
+                    if hasattr(techniques, k):
+                        setattr(techniques, k, bool(v))
+
+        try:
+            events, sub_count = await self._scan_domain(domain)
+        finally:
+            self._config = orig_config
+
+        if events:
+            try:
+                await self._notification_manager.dispatch(events, domain_name)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Notification dispatch error for %s: %s", domain_name, exc)
+
+        from sqlalchemy import update as _update
+        from src.database import Domain as _Domain
+        with self._db.get_session() as session:
+            session.execute(
+                _update(_Domain)
+                .where(_Domain.id == domain.id)
+                .values(last_scan=datetime.now(tz=timezone.utc))
+            )
+
+        logger.info(
+            "Domain scan complete for %s: %d subdomains, %d events",
+            domain_name, sub_count, len(events),
+        )
+        return sub_count, len(events)

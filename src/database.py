@@ -88,6 +88,10 @@ class Domain(Base):
     added_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     last_scan: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
     scan_interval_minutes: int = Column(Integer, default=360, nullable=False)
+    # FK added via ALTER TABLE migration for existing DBs; None = use global config
+    profile_id: Optional[int] = Column(
+        Integer, ForeignKey("scan_profiles.id", ondelete="SET NULL"), nullable=True
+    )
 
     subdomains: List["Subdomain"] = relationship(
         "Subdomain", back_populates="domain_ref", cascade="all, delete-orphan"
@@ -304,6 +308,115 @@ class Asset(Base):
         )
 
 
+class ScanProfile(Base):
+    """A named scan profile controlling enumeration, port-scan, and crawl behaviour."""
+
+    __tablename__ = "scan_profiles"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    name: str = Column(String(64), unique=True, nullable=False, index=True)
+    description: Optional[str] = Column(Text, nullable=True)
+    is_builtin: bool = Column(Boolean, default=False, nullable=False)
+    settings: Optional[Any] = Column(JSONEncodedValue, nullable=True)
+    created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<ScanProfile id={self.id} name={self.name!r} builtin={self.is_builtin}>"
+
+
+# Built-in profile definitions — seeded once on first run.
+_BUILTIN_PROFILES: List[Dict[str, Any]] = [
+    {
+        "id": 1,
+        "name": "Passive Only",
+        "description": "No active probing. CT logs, Wayback Machine, and passive DNS only. Zero noise on the target.",
+        "is_builtin": True,
+        "settings": {
+            "scan_mode": "passive",
+            "enumeration": {
+                "certificate_transparency": True,
+                "dns_bruteforce": False,
+                "passive_dns": True,
+                "wayback_machine": True,
+                "ssl_san_extraction": False,
+                "js_analysis": False,
+                "zone_transfer": False,
+                "reverse_ip": False,
+                "dns_records": False,
+            },
+            "port_scanning": {"enabled": False, "arguments": ""},
+            "crawl": {"enabled": False, "max_depth": 0, "max_pages": 0},
+        },
+    },
+    {
+        "id": 2,
+        "name": "Stealth",
+        "description": "Low-and-slow active scanning. Reduced techniques, slow nmap timing, shallow crawl. Minimises detection footprint.",
+        "is_builtin": True,
+        "settings": {
+            "scan_mode": "stealth",
+            "enumeration": {
+                "certificate_transparency": True,
+                "dns_bruteforce": False,
+                "passive_dns": True,
+                "wayback_machine": True,
+                "ssl_san_extraction": True,
+                "js_analysis": False,
+                "zone_transfer": False,
+                "reverse_ip": False,
+                "dns_records": True,
+            },
+            "port_scanning": {"enabled": True, "arguments": "-sT -T2 --open"},
+            "crawl": {"enabled": True, "max_depth": 2, "max_pages": 100},
+        },
+    },
+    {
+        "id": 3,
+        "name": "Standard",
+        "description": "Balanced default. All major enumeration techniques, TCP connect port scan, full crawl.",
+        "is_builtin": True,
+        "settings": {
+            "scan_mode": "open",
+            "enumeration": {
+                "certificate_transparency": True,
+                "dns_bruteforce": True,
+                "passive_dns": True,
+                "wayback_machine": True,
+                "ssl_san_extraction": True,
+                "js_analysis": True,
+                "zone_transfer": True,
+                "reverse_ip": True,
+                "dns_records": True,
+            },
+            "port_scanning": {"enabled": True, "arguments": "-sT -T4 -sV --version-intensity 2 --open"},
+            "crawl": {"enabled": True, "max_depth": 3, "max_pages": 500},
+        },
+    },
+    {
+        "id": 4,
+        "name": "Aggressive",
+        "description": "Full enumeration, aggressive port scanning with version/script detection, deep crawl. Authorised engagements only.",
+        "is_builtin": True,
+        "settings": {
+            "scan_mode": "aggressive",
+            "enumeration": {
+                "certificate_transparency": True,
+                "dns_bruteforce": True,
+                "passive_dns": True,
+                "wayback_machine": True,
+                "ssl_san_extraction": True,
+                "js_analysis": True,
+                "zone_transfer": True,
+                "reverse_ip": True,
+                "dns_records": True,
+            },
+            "port_scanning": {"enabled": True, "arguments": "-sT -T5 -sV -sC --open"},
+            "crawl": {"enabled": True, "max_depth": 5, "max_pages": 1000},
+        },
+    },
+]
+
+
 # ---------------------------------------------------------------------------
 # DatabaseManager
 # ---------------------------------------------------------------------------
@@ -342,6 +455,8 @@ class DatabaseManager:
 
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
         Base.metadata.create_all(self._engine)
+        self._run_migrations()
+        self.seed_builtin_profiles()
 
     # ------------------------------------------------------------------
     # Session helper
@@ -366,6 +481,253 @@ class DatabaseManager:
             raise
         finally:
             session.close()
+
+    # ------------------------------------------------------------------
+    # Schema migration (SQLite-safe column additions)
+    # ------------------------------------------------------------------
+
+    def _run_migrations(self) -> None:
+        """Apply additive schema changes to existing databases."""
+        with self._engine.connect() as conn:
+            # Add profile_id to domains if missing
+            rows = conn.execute(
+                __import__("sqlalchemy").text("PRAGMA table_info(domains)")
+            ).fetchall()
+            existing_cols = {r[1] for r in rows}
+            if "profile_id" not in existing_cols:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE domains ADD COLUMN profile_id INTEGER "
+                        "REFERENCES scan_profiles(id) ON DELETE SET NULL"
+                    )
+                )
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Scan profile operations
+    # ------------------------------------------------------------------
+
+    def seed_builtin_profiles(self) -> None:
+        """Insert built-in profiles if they don't exist yet."""
+        with self.get_session() as session:
+            for p in _BUILTIN_PROFILES:
+                existing = session.scalar(
+                    select(ScanProfile).where(ScanProfile.id == p["id"])
+                )
+                if existing is None:
+                    obj = ScanProfile(
+                        id=p["id"],
+                        name=p["name"],
+                        description=p["description"],
+                        is_builtin=p["is_builtin"],
+                        settings=p["settings"],
+                    )
+                    session.add(obj)
+
+    def get_all_profiles(self) -> List["ScanProfile"]:
+        """Return all scan profiles ordered built-ins first, then by name."""
+        with self.get_session() as session:
+            return list(
+                session.scalars(
+                    select(ScanProfile).order_by(
+                        ScanProfile.is_builtin.desc(), ScanProfile.name
+                    )
+                ).all()
+            )
+
+    def get_profile(self, profile_id: int) -> Optional["ScanProfile"]:
+        with self.get_session() as session:
+            return session.scalar(
+                select(ScanProfile).where(ScanProfile.id == profile_id)
+            )
+
+    def create_profile(
+        self,
+        name: str,
+        description: str,
+        settings: Dict[str, Any],
+    ) -> "ScanProfile":
+        with self.get_session() as session:
+            obj = ScanProfile(
+                name=name,
+                description=description,
+                is_builtin=False,
+                settings=settings,
+            )
+            session.add(obj)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def update_profile(
+        self, profile_id: int, **kwargs: Any
+    ) -> Optional["ScanProfile"]:
+        with self.get_session() as session:
+            obj = session.scalar(
+                select(ScanProfile).where(ScanProfile.id == profile_id)
+            )
+            if obj is None or obj.is_builtin:
+                return None
+            for k, v in kwargs.items():
+                if hasattr(obj, k):
+                    setattr(obj, k, v)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def delete_profile(self, profile_id: int) -> bool:
+        with self.get_session() as session:
+            obj = session.scalar(
+                select(ScanProfile).where(ScanProfile.id == profile_id)
+            )
+            if obj is None or obj.is_builtin:
+                return False
+            session.delete(obj)
+            return True
+
+    def set_domain_profile(
+        self, domain_id: int, profile_id: Optional[int]
+    ) -> bool:
+        """Assign (or clear) a scan profile for a domain. Returns False if domain not found."""
+        with self.get_session() as session:
+            obj = session.get(Domain, domain_id)
+            if obj is None:
+                return False
+            obj.profile_id = profile_id
+            return True
+
+    def get_domain_details(self, domain_id: int) -> Optional[Dict[str, Any]]:
+        """Return full detail payload for a single domain: subdomains, ports, changes, profile."""
+        from datetime import timedelta
+        from sqlalchemy import case as sa_case
+
+        with self.get_session() as session:
+            dom = session.get(Domain, domain_id)
+            if dom is None:
+                return None
+
+            profile = None
+            if dom.profile_id:
+                profile = session.get(ScanProfile, dom.profile_id)
+
+            subs = list(
+                session.scalars(
+                    select(Subdomain)
+                    .where(Subdomain.domain_id == domain_id)
+                    .order_by(Subdomain.fqdn)
+                ).all()
+            )
+
+            # Latest port scan per subdomain FQDN
+            subq = (
+                select(PortScan.host, func.max(PortScan.scanned_at).label("max_at"))
+                .group_by(PortScan.host)
+                .subquery()
+            )
+            port_scans = list(
+                session.scalars(
+                    select(PortScan)
+                    .join(
+                        subq,
+                        (PortScan.host == subq.c.host)
+                        & (PortScan.scanned_at == subq.c.max_at),
+                    )
+                    .where(PortScan.host.in_([s.fqdn for s in subs]))
+                    .options(selectinload(PortScan.open_ports))
+                    .order_by(PortScan.host)
+                ).all()
+            )
+
+            cutoff = _utcnow() - timedelta(days=7)
+            sub_fqdns = [s.fqdn for s in subs]
+            changes = list(
+                session.scalars(
+                    select(ChangeEvent)
+                    .where(
+                        ChangeEvent.detected_at >= cutoff,
+                        ChangeEvent.target.in_(sub_fqdns + [dom.domain]),
+                    )
+                    .order_by(ChangeEvent.detected_at.desc())
+                ).all()
+            )
+
+        # Build host → ports map
+        host_ports: Dict[str, list] = {}
+        for ps in port_scans:
+            host_ports[ps.host] = [
+                {
+                    "port": p.port,
+                    "protocol": p.protocol,
+                    "state": p.state,
+                    "service": p.service,
+                    "product": p.product,
+                    "version": p.version,
+                    "extra_info": p.extra_info,
+                }
+                for p in sorted(ps.open_ports, key=lambda x: x.port)
+            ]
+
+        live_count = sum(1 for s in subs if s.status == "alive")
+        open_port_count = sum(len(v) for v in host_ports.values())
+
+        return {
+            "domain": {
+                "id": dom.id,
+                "domain": dom.domain,
+                "added_at": dom.added_at.isoformat() if dom.added_at else None,
+                "last_scan": dom.last_scan.isoformat() if dom.last_scan else None,
+                "profile_id": dom.profile_id,
+                "profile_name": profile.name if profile else None,
+                "profile_mode": (profile.settings or {}).get("scan_mode") if profile else None,
+            },
+            "stats": {
+                "total_subs": len(subs),
+                "live_subs": live_count,
+                "open_ports": open_port_count,
+                "events_7d": len(changes),
+            },
+            "subdomains": [
+                {
+                    "id": s.id,
+                    "fqdn": s.fqdn,
+                    "status": s.status,
+                    "http_status": s.http_status,
+                    "ip_addresses": s.ip_addresses or [],
+                    "technologies": s.technologies or [],
+                    "classification": s.classification,
+                    "page_title": s.page_title,
+                    "takeover_vulnerable": s.takeover_vulnerable,
+                    "first_seen": s.first_seen.isoformat() if s.first_seen else None,
+                    "last_seen": s.last_seen.isoformat() if s.last_seen else None,
+                    "open_ports": host_ports.get(s.fqdn, []),
+                }
+                for s in subs
+            ],
+            "port_scans": [
+                {
+                    "host": ps.host,
+                    "status": ps.status,
+                    "scanned_at": ps.scanned_at.isoformat() if ps.scanned_at else None,
+                    "scan_duration": ps.scan_duration,
+                    "error": ps.error,
+                    "ports": host_ports.get(ps.host, []),
+                }
+                for ps in port_scans
+            ],
+            "recent_changes": [
+                {
+                    "id": e.id,
+                    "event_type": e.event_type,
+                    "severity": e.severity,
+                    "target": e.target,
+                    "description": e.description,
+                    "detected_at": e.detected_at.isoformat() if e.detected_at else None,
+                    "alerted": e.alerted,
+                    "diff_data": e.diff_data,
+                }
+                for e in changes
+            ],
+        }
 
     # ------------------------------------------------------------------
     # Domain operations
@@ -881,3 +1243,62 @@ class DatabaseManager:
                     .order_by(ChangeEvent.detected_at.desc())
                 ).all()
             )
+
+    def delete_domain(self, domain_id: int) -> bool:
+        """Delete a root domain and cascade-delete all its subdomains and events.
+
+        Returns True if the domain was found and deleted, False if not found.
+        """
+        with self.get_session() as session:
+            obj = session.get(Domain, domain_id)
+            if obj is None:
+                return False
+            session.delete(obj)
+            return True
+
+    def get_all_domains_with_stats(self) -> List[Dict[str, Any]]:
+        """Return all root domains with subdomain counts, last scan time, and assigned profile."""
+        from sqlalchemy import case as sa_case
+        with self.get_session() as session:
+            rows = session.execute(
+                select(
+                    Domain.id,
+                    Domain.domain,
+                    Domain.added_at,
+                    Domain.last_scan,
+                    Domain.profile_id,
+                    ScanProfile.name.label("profile_name"),
+                    ScanProfile.settings.label("profile_settings"),
+                    func.count(Subdomain.id).label("total_subs"),
+                    func.sum(
+                        sa_case((Subdomain.status == "alive", 1), else_=0)
+                    ).label("live_subs"),
+                )
+                .outerjoin(Subdomain, Domain.id == Subdomain.domain_id)
+                .outerjoin(ScanProfile, Domain.profile_id == ScanProfile.id)
+                .group_by(Domain.id)
+                .order_by(Domain.domain)
+            ).all()
+
+        result = []
+        for r in rows:
+            settings = r.profile_settings
+            if isinstance(settings, str):
+                import json as _json
+                try:
+                    settings = _json.loads(settings)
+                except Exception:
+                    settings = {}
+            profile_mode = (settings or {}).get("scan_mode") if settings else None
+            result.append({
+                "id": r.id,
+                "domain": r.domain,
+                "added_at": r.added_at.isoformat() if r.added_at else None,
+                "last_scan": r.last_scan.isoformat() if r.last_scan else None,
+                "profile_id": r.profile_id,
+                "profile_name": r.profile_name,
+                "profile_mode": profile_mode,
+                "total_subs": r.total_subs or 0,
+                "live_subs": int(r.live_subs or 0),
+            })
+        return result

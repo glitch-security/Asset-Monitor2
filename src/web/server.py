@@ -2,12 +2,17 @@
 Flask web dashboard server.
 
 Provides:
-  GET /                     — full dashboard HTML
-  GET /api/summary          — aggregated stat cards
-  GET /api/subdomains       — all subdomains with status + latest port data
-  GET /api/ports            — latest port scan per host
-  GET /api/changes          — recent change events (default: last 48h)
-  GET /api/headers          — latest HTTP header snapshots per subdomain
+  GET  /                            — full dashboard HTML
+  GET  /api/summary                 — aggregated stat cards
+  GET  /api/domains                 — all root domains with subdomain stats
+  GET  /api/subdomains              — all subdomains with status + latest port data
+  GET  /api/ports                   — latest port scan per host
+  GET  /api/changes                 — recent change events (default: last 48h)
+  GET  /api/headers                 — latest HTTP header snapshots per subdomain
+  POST /api/targets                 — add a new domain / subdomain / website
+  DELETE /api/targets/domain/<id>   — delete a root domain (cascade)
+  POST /api/scan/trigger            — trigger an on-demand scan (background thread)
+  GET  /api/scan/status             — current scan state
 
 Runs in a daemon thread alongside APScheduler so it never blocks the scan
 loop, and exits automatically when the main process exits.
@@ -20,17 +25,33 @@ import logging
 import os
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from flask import Flask, jsonify, render_template, request
 
 if TYPE_CHECKING:
     from ..config import AppConfig
     from ..database import DatabaseManager
+    from ..scheduler import SchedManager
 
 logger = logging.getLogger(__name__)
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
+# ---------------------------------------------------------------------------
+# Scan state — shared across Flask threads (protected by _scan_lock)
+# ---------------------------------------------------------------------------
+
+_scan_lock = threading.Lock()
+_scan_state: dict = {
+    "running": False,
+    "started_at": None,
+    "domain": None,
+    "error": None,
+    "last_completed": None,
+    "last_subs_found": 0,
+    "last_events": 0,
+}
 
 
 def _serial(obj: Any) -> Any:
@@ -53,7 +74,11 @@ def _ev_to_dict(ev: Any) -> dict:
     }
 
 
-def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
+def create_app(
+    db: "DatabaseManager",
+    config: "AppConfig",
+    sched_manager: Optional["SchedManager"] = None,
+) -> Flask:
     app = Flask(__name__, template_folder=_TEMPLATE_DIR)
 
     # ------------------------------------------------------------------ #
@@ -78,6 +103,19 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     # ------------------------------------------------------------------ #
+    # API — all root domains with subdomain stats
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/domains")
+    def api_domains():
+        try:
+            rows = db.get_all_domains_with_stats()
+            return jsonify(rows)
+        except Exception as exc:
+            logger.error("api_domains error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
     # API — all subdomains with latest open-port list
     # ------------------------------------------------------------------ #
 
@@ -85,14 +123,13 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
     def api_subdomains():
         try:
             from sqlalchemy import select
-            from ..database import Subdomain, PortScan, OpenPort
+            from ..database import Subdomain
 
             with db.get_session() as session:
                 subs = list(session.scalars(
                     select(Subdomain).order_by(Subdomain.fqdn)
                 ).all())
 
-            # Build a host→ports map from the latest scan per host
             latest_scans = db.get_all_latest_port_scans()
             host_ports: dict[str, list[dict]] = {}
             for scan in latest_scans:
@@ -170,7 +207,7 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
     def api_changes():
         try:
             hours = int(request.args.get("hours", 48))
-            hours = min(max(hours, 1), 8760)  # clamp to 1h–1yr
+            hours = min(max(hours, 1), 8760)
             events = db.get_recent_events(hours=hours)
             return jsonify([_ev_to_dict(e) for e in events])
         except Exception as exc:
@@ -178,7 +215,7 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     # ------------------------------------------------------------------ #
-    # API — HTTP header snapshots (latest SubdomainScan per subdomain)
+    # API — HTTP header snapshots
     # ------------------------------------------------------------------ #
 
     @app.route("/api/headers")
@@ -199,7 +236,6 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
             from ..database import Subdomain, SubdomainScan
 
             with db.get_session() as session:
-                # Latest scan per subdomain
                 subq = (
                     select(
                         SubdomainScan.subdomain_id,
@@ -223,17 +259,12 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
             rows = []
             for sub, scan in pairs:
                 raw = scan.raw_headers or {}
-                # Normalise keys to lowercase
                 headers = {k.lower(): v for k, v in raw.items()}
-
                 sec_status = {
                     h: ("present" if h in headers else "missing")
                     for h in SECURITY_HEADERS
                 }
-                info_leaked = {
-                    h: headers[h] for h in INFO_HEADERS if h in headers
-                }
-
+                info_leaked = {h: headers[h] for h in INFO_HEADERS if h in headers}
                 rows.append({
                     "fqdn": sub.fqdn,
                     "status_code": scan.http_status,
@@ -247,20 +278,304 @@ def create_app(db: "DatabaseManager", config: "AppConfig") -> Flask:
             logger.error("api_headers error: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
+    # ------------------------------------------------------------------ #
+    # API — add a new target (domain / subdomain / website)
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/targets", methods=["POST"])
+    def api_add_target():
+        data = request.get_json(silent=True) or {}
+        target_type = (data.get("type") or "").lower()
+        value = (data.get("value") or "").strip()
+        scan_now = bool(data.get("scan_now", False))
+        techniques = data.get("techniques") or {}
+
+        if not value:
+            return jsonify({"error": "value is required"}), 400
+        if target_type not in ("domain", "subdomain", "website"):
+            return jsonify({"error": "type must be domain, subdomain, or website"}), 400
+
+        try:
+            if target_type == "domain":
+                dom = db.add_domain(value)
+                result = {"type": "domain", "id": dom.id, "value": dom.domain}
+
+                if scan_now and sched_manager:
+                    _trigger_background_scan(sched_manager, dom.domain, techniques)
+                    result["scan_triggered"] = True
+
+            elif target_type == "subdomain":
+                parts = value.split(".")
+                root = ".".join(parts[-2:]) if len(parts) >= 2 else value
+                parent = db.get_domain(root) or db.add_domain(root)
+                sub, is_new = db.upsert_subdomain(
+                    fqdn=value,
+                    domain_id=parent.id,
+                    discovery_technique="manual",
+                )
+                _append_to_file("subdomains.txt", value)
+                result = {"type": "subdomain", "id": sub.id, "value": sub.fqdn, "is_new": is_new}
+
+                if scan_now and sched_manager:
+                    _trigger_background_scan(sched_manager, parent.domain, techniques)
+                    result["scan_triggered"] = True
+
+            else:  # website
+                _append_to_file("websites.txt", value)
+                result = {"type": "website", "value": value}
+
+                if scan_now and sched_manager:
+                    _trigger_background_scan(sched_manager, None, {})
+                    result["scan_triggered"] = True
+
+            return jsonify(result), 201
+
+        except Exception as exc:
+            logger.error("api_add_target error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # API — assign a profile to a domain
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/targets/domain/<int:domain_id>", methods=["PATCH"])
+    def api_patch_domain(domain_id: int):
+        data = request.get_json(silent=True) or {}
+        if "profile_id" not in data:
+            return jsonify({"error": "profile_id is required"}), 400
+        profile_id = data["profile_id"]  # None clears the profile
+        ok = db.set_domain_profile(domain_id, profile_id)
+        if not ok:
+            return jsonify({"error": "Domain not found"}), 404
+        return jsonify({"updated": True, "domain_id": domain_id, "profile_id": profile_id})
+
+    # ------------------------------------------------------------------ #
+    # API — per-domain detail page data
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/domains/<int:domain_id>/details")
+    def api_domain_details(domain_id: int):
+        try:
+            details = db.get_domain_details(domain_id)
+            if details is None:
+                return jsonify({"error": "Domain not found"}), 404
+            return jsonify(details)
+        except Exception as exc:
+            logger.error("api_domain_details error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # API — scan profiles
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/profiles")
+    def api_profiles():
+        try:
+            profiles = db.get_all_profiles()
+            return jsonify([
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "description": p.description,
+                    "is_builtin": p.is_builtin,
+                    "settings": p.settings,
+                    "created_at": p.created_at.isoformat() if p.created_at else None,
+                }
+                for p in profiles
+            ])
+        except Exception as exc:
+            logger.error("api_profiles error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/profiles", methods=["POST"])
+    def api_create_profile():
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        description = (data.get("description") or "").strip()
+        settings = data.get("settings") or {}
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        try:
+            p = db.create_profile(name, description, settings)
+            return jsonify({
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "is_builtin": p.is_builtin,
+                "settings": p.settings,
+            }), 201
+        except Exception as exc:
+            logger.error("api_create_profile error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/profiles/<int:profile_id>", methods=["PUT"])
+    def api_update_profile(profile_id: int):
+        data = request.get_json(silent=True) or {}
+        try:
+            p = db.update_profile(
+                profile_id,
+                name=data.get("name"),
+                description=data.get("description"),
+                settings=data.get("settings"),
+            )
+            if p is None:
+                return jsonify({"error": "Profile not found or is built-in"}), 404
+            return jsonify({"id": p.id, "name": p.name, "description": p.description, "settings": p.settings})
+        except Exception as exc:
+            logger.error("api_update_profile error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/profiles/<int:profile_id>", methods=["DELETE"])
+    def api_delete_profile(profile_id: int):
+        try:
+            deleted = db.delete_profile(profile_id)
+            if not deleted:
+                return jsonify({"error": "Profile not found or is built-in"}), 404
+            return jsonify({"deleted": True, "id": profile_id})
+        except Exception as exc:
+            logger.error("api_delete_profile error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # API — delete a root domain
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/targets/domain/<int:domain_id>", methods=["DELETE"])
+    def api_delete_domain(domain_id: int):
+        try:
+            deleted = db.delete_domain(domain_id)
+            if not deleted:
+                return jsonify({"error": "Domain not found"}), 404
+            return jsonify({"deleted": True, "id": domain_id})
+        except Exception as exc:
+            logger.error("api_delete_domain error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # API — trigger an on-demand scan
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/scan/trigger", methods=["POST"])
+    def api_scan_trigger():
+        if not sched_manager:
+            return jsonify({"error": "Scheduler not available in this mode"}), 503
+
+        with _scan_lock:
+            if _scan_state["running"]:
+                return jsonify({"error": "A scan is already in progress"}), 409
+
+        data = request.get_json(silent=True) or {}
+        domain = (data.get("domain") or "").strip() or None
+        techniques = data.get("techniques") or {}
+
+        if domain:
+            _trigger_background_scan(sched_manager, domain, techniques)
+        else:
+            _trigger_background_full_scan(sched_manager)
+
+        return jsonify({"started": True, "domain": domain})
+
+    # ------------------------------------------------------------------ #
+    # API — scan status
+    # ------------------------------------------------------------------ #
+
+    @app.route("/api/scan/status")
+    def api_scan_status():
+        with _scan_lock:
+            return jsonify(dict(_scan_state))
+
     return app
 
+
+# ---------------------------------------------------------------------------
+# Background scan helpers
+# ---------------------------------------------------------------------------
+
+def _trigger_background_scan(
+    sched_manager: "SchedManager",
+    domain: Optional[str],
+    techniques: dict,
+) -> None:
+    """Kick off a single-domain async scan in a background thread."""
+    import asyncio
+
+    def _run() -> None:
+        global _scan_state
+        with _scan_lock:
+            if _scan_state["running"]:
+                return
+            _scan_state.update({"running": True, "started_at": datetime.now(timezone.utc).isoformat(), "domain": domain, "error": None})
+        try:
+            sub_count, event_count = asyncio.run(
+                sched_manager.run_domain_scan(domain, technique_overrides=techniques or None)
+            )
+            with _scan_lock:
+                _scan_state.update({
+                    "running": False,
+                    "last_completed": datetime.now(timezone.utc).isoformat(),
+                    "last_subs_found": sub_count,
+                    "last_events": event_count,
+                })
+        except Exception as exc:
+            logger.error("Background domain scan failed: %s", exc, exc_info=True)
+            with _scan_lock:
+                _scan_state.update({"running": False, "error": str(exc)})
+
+    threading.Thread(target=_run, daemon=True, name=f"scan-{domain or 'all'}").start()
+
+
+def _trigger_background_full_scan(sched_manager: "SchedManager") -> None:
+    """Kick off a full scan (all domains) in a background thread."""
+    import asyncio
+
+    def _run() -> None:
+        global _scan_state
+        with _scan_lock:
+            if _scan_state["running"]:
+                return
+            _scan_state.update({"running": True, "started_at": datetime.now(timezone.utc).isoformat(), "domain": None, "error": None})
+        try:
+            asyncio.run(sched_manager.run_full_scan())
+            with _scan_lock:
+                _scan_state.update({
+                    "running": False,
+                    "last_completed": datetime.now(timezone.utc).isoformat(),
+                })
+        except Exception as exc:
+            logger.error("Background full scan failed: %s", exc, exc_info=True)
+            with _scan_lock:
+                _scan_state.update({"running": False, "error": str(exc)})
+
+    threading.Thread(target=_run, daemon=True, name="scan-full").start()
+
+
+def _append_to_file(path: str, value: str) -> None:
+    """Append a value to a text file if not already present."""
+    existing: list[str] = []
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as fh:
+            existing = [line.strip() for line in fh if not line.strip().startswith("#")]
+    if value not in existing:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"{value}\n")
+
+
+# ---------------------------------------------------------------------------
+# Server startup
+# ---------------------------------------------------------------------------
 
 def start_web_server(
     db: "DatabaseManager",
     config: "AppConfig",
     host: str = "0.0.0.0",
     port: int = 5000,
+    sched_manager: Optional["SchedManager"] = None,
 ) -> threading.Thread:
-    """Start the Flask server in a daemon thread.
+    """Start the Flask dashboard in a daemon thread.
 
     Returns the thread so the caller can join if needed.
     """
-    app = create_app(db, config)
+    app = create_app(db, config, sched_manager)
 
     thread = threading.Thread(
         target=lambda: app.run(
