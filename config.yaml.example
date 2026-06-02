@@ -64,7 +64,9 @@ enumeration:
     reverse_ip: true
 
   # Path to the subdomain wordlist used during DNS bruteforce.
-  wordlist_path: "./wordlists/subdomains.txt"
+  # Default (243 entries): "./wordlists/subdomains.txt"
+  # Extended (5 000 entries): "./wordlists/subdomains-5000.txt"
+  wordlist_path: "./wordlists/subdomains-5000.txt"
 
   # Authoritative / recursive resolvers used for DNS lookups.
   dns_resolvers:
@@ -126,6 +128,35 @@ monitoring:
 
     # Pixel-level visual diff of screenshots (requires screenshot: true).
     visual_diff: false
+
+
+# -----------------------------------------------------------------------------
+# Port scanning — nmap-based open port discovery for live subdomains
+# -----------------------------------------------------------------------------
+port_scanning:
+  enabled: true
+
+  # Comma-separated port list or nmap range (e.g. "1-1024,8080,8443")
+  ports: "21,22,23,25,53,80,110,135,139,143,389,443,445,465,587,636,993,995,1433,1521,2222,2375,2376,3000,3306,3389,4443,5000,5432,5672,5900,5984,6379,7000,7001,8000,8080,8081,8443,8888,9000,9042,9090,9200,9300,9443,11211,15672,27017,27018"
+
+  # -sT  = TCP connect scan (default, works without root or capabilities)
+  # -sS  = SYN scan (faster/stealthier, requires NET_RAW cap — see docker-compose)
+  scan_arguments: "-sT -T4 -sV --version-intensity 2 --open"
+
+  # Max seconds nmap may run per host
+  timeout_seconds: 120
+
+  # How many hosts to scan in parallel
+  max_concurrent: 5
+
+
+# -----------------------------------------------------------------------------
+# Web dashboard — browser UI for monitoring status
+# -----------------------------------------------------------------------------
+web:
+  enabled: true
+  host: "0.0.0.0"   # bind address inside the container / local Python run
+  port: 5000         # mapped to host via docker-compose ports section
 
 
 # -----------------------------------------------------------------------------

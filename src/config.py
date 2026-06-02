@@ -148,6 +148,26 @@ class WebhookConfig(BaseModel):
     secret: str = ""
 
 
+class PortScanConfig(BaseModel):
+    enabled: bool = True
+    ports: str = (
+        "21,22,23,25,53,80,110,111,135,139,143,389,443,445,465,587,"
+        "636,993,995,1433,1521,2222,2375,2376,3000,3306,3389,4443,4848,"
+        "5000,5432,5672,5900,5984,6379,7000,7001,8000,8080,8081,8443,"
+        "8888,8983,9000,9042,9090,9200,9300,9443,11211,15672,27017,27018"
+    )
+    # Use "-sS -T4 -sV --open" for SYN scanning (requires NET_RAW capability)
+    scan_arguments: str = "-sT -T4 -sV --version-intensity 2 --open"
+    timeout_seconds: int = 120
+    max_concurrent: int = 5
+
+
+class WebConfig(BaseModel):
+    enabled: bool = True
+    host: str = "0.0.0.0"
+    port: int = 5000
+
+
 class NotificationsConfig(BaseModel):
     slack: SlackConfig = Field(default_factory=SlackConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
@@ -166,6 +186,8 @@ class AppConfig(BaseModel):
     enumeration: EnumerationConfig = Field(default_factory=EnumerationConfig)
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
+    port_scanning: PortScanConfig = Field(default_factory=PortScanConfig)
+    web: WebConfig = Field(default_factory=WebConfig)
     api_keys: ApiKeysConfig = Field(default_factory=ApiKeysConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 

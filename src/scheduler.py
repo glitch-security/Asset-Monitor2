@@ -204,7 +204,21 @@ class SchedManager:
                 )
 
         # ----------------------------------------------------------------
-        # 5. Dispatch notifications grouped by domain
+        # 5. Port scanning
+        # ----------------------------------------------------------------
+        try:
+            from src.scanning.manager import PortScanManager
+
+            psm = PortScanManager(self._config, self._db)
+            port_events = await psm.scan_all()
+            all_new_events.extend(port_events)
+        except ImportError:
+            logger.debug("scanning module not available — skipping port scan")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Port scanning failed: %s", exc, exc_info=True)
+
+        # ----------------------------------------------------------------
+        # 6. Dispatch notifications
         # ----------------------------------------------------------------
         events_by_domain = self._group_events_by_domain(
             all_new_events, all_domains
@@ -235,7 +249,7 @@ class SchedManager:
                 )
 
         # ----------------------------------------------------------------
-        # 7. Summary log
+        # 7. Summary
         # ----------------------------------------------------------------
         elapsed = (datetime.now(tz=timezone.utc) - scan_start).total_seconds()
         logger.info(

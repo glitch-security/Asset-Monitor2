@@ -1,0 +1,48 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.Python
+
+# Virtual environments — never bake these into the image
+venv/
+.venv/
+env/
+ENV/
+
+# Local database — mounted as a volume at runtime
+data/
+
+# Local config — mounted as a volume at runtime
+config.yaml
+
+# User target files — mounted as volumes at runtime
+domains.txt
+subdomains.txt
+websites.txt
+
+# Development / editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Git history
+.git/
+.gitignore
+.gitattributes
+
+# CI / test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Documentation that doesn't belong in the image
+*.md

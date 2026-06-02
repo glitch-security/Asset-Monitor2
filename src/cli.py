@@ -91,7 +91,7 @@ def _parse_since(since: Optional[str]) -> Optional[datetime]:
 )
 @click.option(
     "--db",
-    default="data/monitor.db",
+    default="data/assetmonitor.db",
     show_default=True,
     help="Path to the SQLite database file.",
 )
@@ -132,7 +132,7 @@ def cli(ctx: click.Context, config: str, db: str, log_level: str) -> None:
 @click.option(
     "--module",
     type=click.Choice(
-        ["all", "subdomains", "websites", "known-subdomains"], case_sensitive=False
+        ["all", "subdomains", "websites", "known-subdomains", "ports"], case_sensitive=False
     ),
     default="all",
     show_default=True,
@@ -165,6 +165,12 @@ def scan(ctx: click.Context, module: str, domain: Optional[str]) -> None:
 
         if module in ("all", "subdomains", "known-subdomains", "websites"):
             await sched.run_full_scan()
+        elif module == "ports":
+            from src.scanning.manager import PortScanManager
+            psm = PortScanManager(config, db)
+            events = await psm.scan_all()
+            console.print(f"[bold green]Port scan complete.[/bold green] {len(events)} change event(s).")
+            return
         else:
             console.print(f"[red]Unknown module: {module}[/red]")
             sys.exit(1)
@@ -493,6 +499,14 @@ def daemon(ctx: click.Context) -> None:
         f"[bold cyan]AssetMonitor daemon starting[/bold cyan] "
         f"(interval={config.scan.interval_minutes}m)"
     )
+
+    # Start the web dashboard if enabled
+    if config.web.enabled:
+        from src.web.server import start_web_server
+        start_web_server(db, config, host=config.web.host, port=config.web.port)
+        console.print(
+            f"[bold cyan]Dashboard:[/bold cyan] http://{config.web.host}:{config.web.port}"
+        )
 
     # Run an immediate scan on startup, then let the scheduler take over.
     asyncio.run(sched.run_full_scan())

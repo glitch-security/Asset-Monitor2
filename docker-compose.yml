@@ -1,15 +1,10 @@
-version: '3.8'
-
 # =============================================================================
 # AssetMonitor — Docker Compose
 #
-# Volumes expected on the host (create before first run):
-#   ./config.yaml          — application configuration (copy from config.yaml.example)
-#   ./data/                — SQLite database storage (auto-created)
-#   ./wordlists/           — subdomain wordlists
-#   ./domains.txt          — root domains to enumerate (copy from domains.txt.example)
-#   ./subdomains.txt       — known subdomains to monitor (copy from subdomains.txt.example)
-#   ./websites.txt         — website URLs to crawl (copy from websites.txt.example)
+# Before first run on Linux:
+#   mkdir -p data && chown 1000:1000 data
+#
+# Windows / macOS with Docker Desktop — no extra steps needed.
 # =============================================================================
 
 services:
@@ -25,47 +20,46 @@ services:
     restart: unless-stopped
 
     environment:
-      # Force UTC timestamps throughout the application.
       TZ: UTC
-      # Set to DEBUG for verbose output during troubleshooting.
       LOG_LEVEL: INFO
-      # Override the Python path so relative imports resolve correctly.
       PYTHONUNBUFFERED: "1"
 
+    # Resource limits (non-swarm / plain docker compose syntax)
+    mem_limit: 768m
+    cpus: "2.0"
+    memswap_limit: 768m
+
+    # NET_RAW enables SYN-mode nmap scanning (-sS) from the non-root user.
+    # The nmap binary already has cap_net_raw+ep set by the Dockerfile.
+    # Remove this if you prefer TCP-connect-only scanning with no capabilities.
+    cap_add:
+      - NET_RAW
+
+    ports:
+      # Web dashboard — open http://localhost:5000 in your browser
+      - "5000:5000"
+
     volumes:
-      # Configuration file (read-only inside the container)
+      # Configuration (read-only)
       - ./config.yaml:/app/config.yaml:ro
 
-      # Persistent database storage
+      # Persistent database — must be writable by UID 1000 on Linux
       - ./data:/app/data
 
-      # Subdomain wordlists
+      # Wordlists (read-only)
       - ./wordlists:/app/wordlists:ro
 
-      # Input target files (read-only inside the container)
+      # Target input files (read-only)
       - ./domains.txt:/app/domains.txt:ro
       - ./subdomains.txt:/app/subdomains.txt:ro
       - ./websites.txt:/app/websites.txt:ro
 
-    # Expose no ports — AssetMonitor is a daemon with no web UI.
-    # Remove this comment and add a ports mapping if you add a web interface.
-
-    # Resource limits — adjust to your host capacity.
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 512M
-        reservations:
-          memory: 128M
-
-    # Health check: verify the process is still alive.
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/summary', timeout=5)"]
       interval: 60s
-      timeout: 10s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 45s
 
     logging:
       driver: "json-file"

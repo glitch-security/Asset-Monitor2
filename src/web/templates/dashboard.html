@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AssetMonitor — Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <style>
+    body { background: #0d1117; color: #c9d1d9; font-size: 0.875rem; }
+    .navbar-brand { font-weight: 700; letter-spacing: .5px; }
+    .card { background: #161b22; border: 1px solid #30363d; }
+    .card-header { background: #1c2128; border-bottom: 1px solid #30363d; font-weight: 600; }
+    .table { color: #c9d1d9; }
+    .table thead th { background: #1c2128; border-color: #30363d; color: #8b949e; font-size: .75rem; text-transform: uppercase; letter-spacing: .5px; }
+    .table td, .table th { border-color: #21262d; vertical-align: middle; }
+    .table-hover tbody tr:hover { background: #1c2128; }
+    .stat-card { border: 1px solid #30363d; background: #161b22; border-radius: 8px; padding: 1rem 1.25rem; }
+    .stat-num { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+    .stat-label { font-size: .75rem; color: #8b949e; margin-top: .25rem; text-transform: uppercase; letter-spacing: .5px; }
+    .badge-CRITICAL { background: #da3633 !important; }
+    .badge-HIGH     { background: #d29922 !important; color: #0d1117 !important; }
+    .badge-MEDIUM   { background: #e3b341 !important; color: #0d1117 !important; }
+    .badge-LOW      { background: #388bfd !important; }
+    .badge-INFO     { background: #484f58 !important; }
+    .dot-alive  { width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px; }
+    .dot-dead   { width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block;margin-right:5px; }
+    .dot-unknown{ width:8px;height:8px;border-radius:50%;background:#484f58;display:inline-block;margin-right:5px; }
+    .dot-up     { width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px; }
+    .dot-down   { width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block;margin-right:5px; }
+    .port-badge { display:inline-block;padding:1px 6px;border-radius:4px;font-size:.72rem;font-family:monospace;margin:1px; }
+    .port-web   { background:#1d3461;color:#58a6ff;border:1px solid #388bfd44; }
+    .port-db    { background:#3d1f00;color:#e3b341;border:1px solid #d2992244; }
+    .port-ssh   { background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044; }
+    .port-risky { background:#3d1111;color:#f85149;border:1px solid #da363344; }
+    .port-other { background:#1c2128;color:#8b949e;border:1px solid #30363d; }
+    .sec-present { color:#3fb950;font-size:.8rem; }
+    .sec-missing  { color:#f85149;font-size:.8rem; }
+    .sec-label    { font-size:.7rem;color:#8b949e; }
+    .section-title { font-size:.8rem;text-transform:uppercase;letter-spacing:.8px;color:#8b949e;font-weight:600; }
+    .text-muted { color: #8b949e !important; }
+    .alert-critical { background:#3d1111;border:1px solid #da3633;border-radius:6px;padding:.75rem 1rem; }
+    .new-badge { font-size:.65rem;background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044;padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
+    .takeover-badge { font-size:.65rem;background:#3d1111;color:#f85149;border:1px solid #da363344;padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
+    #refresh-bar { height:2px;background:#388bfd;transition:width 1s linear; }
+    .tab-custom .nav-link { color:#8b949e;border:none;border-bottom:2px solid transparent;border-radius:0;padding:.5rem .75rem;font-size:.8rem; }
+    .tab-custom .nav-link.active { color:#58a6ff;border-bottom-color:#388bfd;background:transparent; }
+    ::-webkit-scrollbar { width:6px;height:6px; }
+    ::-webkit-scrollbar-track { background:#0d1117; }
+    ::-webkit-scrollbar-thumb { background:#30363d;border-radius:3px; }
+  </style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div id="refresh-bar" style="width:100%;position:fixed;top:0;left:0;z-index:9999;"></div>
+
+<!-- Navbar -->
+<nav class="navbar navbar-dark" style="background:#161b22;border-bottom:1px solid #30363d;padding-top:.6rem;padding-bottom:.6rem;margin-top:2px;">
+  <div class="container-fluid">
+    <span class="navbar-brand mb-0 h1" style="font-size:1rem;">
+      <i class="bi bi-shield-lock-fill" style="color:#388bfd;"></i>&nbsp; AssetMonitor
+    </span>
+    <div class="d-flex align-items-center gap-3">
+      <span class="text-muted" style="font-size:.75rem;" id="last-scan-label">Fetching...</span>
+      <span class="badge bg-secondary" id="refresh-timer" style="font-size:.7rem;">60s</span>
+      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;padding:2px 10px;" onclick="refreshAll(true)">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+    </div>
+  </div>
+</nav>
+
+<div class="container-fluid py-3" style="max-width:1600px;">
+
+  <!-- Summary cards -->
+  <div class="row g-2 mb-3" id="summary-row">
+    <div class="col"><div class="stat-card"><div class="stat-num text-primary" id="s-domains">–</div><div class="stat-label">Domains</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num" id="s-subs">–</div><div class="stat-label">Subdomains</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num text-success" id="s-live">–</div><div class="stat-label">Live Hosts</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num text-info" id="s-ports">–</div><div class="stat-label">Open Ports</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num" id="s-events">–</div><div class="stat-label">Events (24h)</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num text-danger" id="s-critical">–</div><div class="stat-label">Critical (24h)</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num" style="color:#d29922;" id="s-high">–</div><div class="stat-label">High (24h)</div></div></div>
+  </div>
+
+  <!-- Critical alert banner -->
+  <div id="critical-banner" class="d-none mb-3"></div>
+
+  <!-- Tabs -->
+  <ul class="nav tab-custom border-bottom mb-3" style="border-color:#30363d !important;">
+    <li class="nav-item"><a class="nav-link active" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="subdomains" href="#" onclick="showTab('subdomains',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="tab-badge-subs">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="headers" href="#" onclick="showTab('headers',this);return false;"><i class="bi bi-shield-check"></i> HTTP Headers <span class="badge bg-secondary ms-1" id="tab-badge-headers">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="changes" href="#" onclick="showTab('changes',this);return false;"><i class="bi bi-activity"></i> Change Events <span class="badge bg-secondary ms-1" id="tab-badge-changes">0</span></a></li>
+  </ul>
+
+  <!-- Tab: Port Scans -->
+  <div id="tab-ports">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-ethernet"></i> Port Scan Results — Latest per Host</span>
+        <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter host..." id="filter-ports" oninput="filterTable('ports-body','filter-ports')">
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>Host</th><th>Status</th><th>Open Ports</th><th>Scan Duration</th><th>Scanned At</th><th>Notes</th>
+            </tr></thead>
+            <tbody id="ports-body"><tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Subdomains -->
+  <div id="tab-subdomains" class="d-none">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-globe"></i> Subdomain Status</span>
+        <div class="d-flex gap-2">
+          <select class="form-select form-select-sm" style="width:120px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-sub-status" onchange="renderSubdomains()">
+            <option value="">All status</option>
+            <option value="alive">Alive</option>
+            <option value="dead">Dead</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter FQDN..." id="filter-subs-text">
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>FQDN</th><th>Status</th><th>HTTP</th><th>IP Addresses</th><th>Open Ports</th><th>Technologies</th><th>First Seen</th><th>Last Seen</th>
+            </tr></thead>
+            <tbody id="subs-body"><tr><td colspan="8" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: HTTP Headers -->
+  <div id="tab-headers" class="d-none">
+    <div class="card">
+      <div class="card-header"><i class="bi bi-shield-check"></i> HTTP Security Headers</div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0" id="headers-table">
+            <thead><tr>
+              <th>FQDN</th><th>HTTP</th>
+              <th title="Strict-Transport-Security">HSTS</th>
+              <th title="Content-Security-Policy">CSP</th>
+              <th title="X-Frame-Options">X-Frame</th>
+              <th title="X-Content-Type-Options">X-CTO</th>
+              <th title="Referrer-Policy">Ref-Policy</th>
+              <th title="Permissions-Policy">Perm-Policy</th>
+              <th>Server Info Leaked</th>
+              <th>Scanned At</th>
+            </tr></thead>
+            <tbody id="headers-body"><tr><td colspan="10" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <p class="text-muted mt-2" style="font-size:.72rem;">
+      <i class="bi bi-info-circle"></i> Headers are collected from the last successful subdomain scan. Data populates after the first full scan cycle.
+    </p>
+  </div>
+
+  <!-- Tab: Change Events -->
+  <div id="tab-changes" class="d-none">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-activity"></i> Change Events</span>
+        <div class="d-flex gap-2 align-items-center">
+          <select class="form-select form-select-sm" style="width:130px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-sev" onchange="renderChanges()">
+            <option value="">All severities</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+            <option value="INFO">Info</option>
+          </select>
+          <select class="form-select form-select-sm" style="width:110px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-hours" onchange="reloadChanges()">
+            <option value="24">Last 24h</option>
+            <option value="48" selected>Last 48h</option>
+            <option value="168">Last 7d</option>
+            <option value="720">Last 30d</option>
+          </select>
+          <input type="text" class="form-control form-control-sm" style="width:180px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter target..." id="filter-target">
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:600px;overflow-y:auto;">
+          <table class="table table-hover mb-0">
+            <thead style="position:sticky;top:0;z-index:1;"><tr>
+              <th>Severity</th><th>Type</th><th>Target</th><th>Description</th><th>Detected At</th><th>Alerted</th>
+            </tr></thead>
+            <tbody id="changes-body"><tr><td colspan="6" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let _subdomains = [];
+let _changes    = [];
+let _portsData  = [];
+let _headersData= [];
+let _countdown  = 60;
+let _timer      = null;
+const ONE_DAY_MS = 86400000;
+
+// ── Utilities ────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000)    return 'just now';
+  if (diff < 3600000)  return Math.floor(diff/60000) + 'm ago';
+  if (diff < ONE_DAY_MS) return Math.floor(diff/3600000) + 'h ago';
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function sevBadge(s) {
+  return `<span class="badge badge-${s}" style="font-size:.68rem;">${s}</span>`;
+}
+
+function statusDot(st) {
+  const cls = st === 'alive' || st === 'up' ? 'dot-alive' : st === 'dead' || st === 'down' ? 'dot-dead' : 'dot-unknown';
+  return `<span class="${cls}"></span>${st || 'unknown'}`;
+}
+
+function portBadge(port, svc) {
+  const webPorts  = new Set([80,443,8080,8443,3000,4000,5000,8000,8888,9443]);
+  const dbPorts   = new Set([3306,5432,27017,6379,9200,1521,1433,5984,9042,11211]);
+  const sshPorts  = new Set([22,2222]);
+  const riskyPorts= new Set([23,3389,5900,5901,2375,2376,6379,27017,9200]);
+  let cls = 'port-other';
+  if (riskyPorts.has(port)) cls = 'port-risky';
+  else if (sshPorts.has(port)) cls = 'port-ssh';
+  else if (webPorts.has(port)) cls = 'port-web';
+  else if (dbPorts.has(port)) cls = 'port-db';
+  const label = svc ? `${port}/${svc}` : `${port}`;
+  return `<span class="port-badge ${cls}" title="${svc}">${label}</span>`;
+}
+
+function secHeader(status) {
+  return status === 'present'
+    ? '<i class="bi bi-check-circle-fill sec-present" title="Present"></i>'
+    : '<i class="bi bi-x-circle-fill sec-missing" title="Missing"></i>';
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Tab switching ────────────────────────────────────────────────────────────
+function showTab(name, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.classList.add('d-none'));
+  document.querySelectorAll('.tab-custom .nav-link').forEach(a => a.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.remove('d-none');
+  el.classList.add('active');
+}
+
+// ── Summary ──────────────────────────────────────────────────────────────────
+async function loadSummary() {
+  try {
+    const r = await fetch('/api/summary');
+    const d = await r.json();
+    document.getElementById('s-domains').textContent   = d.domains ?? '–';
+    document.getElementById('s-subs').textContent      = d.subdomains_total ?? '–';
+    document.getElementById('s-live').textContent      = d.subdomains_live ?? '–';
+    document.getElementById('s-ports').textContent     = d.open_ports_total ?? '–';
+    document.getElementById('s-events').textContent    = d.events_24h ?? '–';
+    document.getElementById('s-critical').textContent  = d.critical_24h ?? '–';
+    document.getElementById('s-high').textContent      = d.high_24h ?? '–';
+    if (d.last_port_scan) {
+      document.getElementById('last-scan-label').textContent = 'Last scan: ' + fmtDate(d.last_port_scan);
+    }
+    // Critical banner
+    const banner = document.getElementById('critical-banner');
+    if ((d.critical_24h || 0) > 0) {
+      banner.innerHTML = `<div class="alert-critical"><i class="bi bi-exclamation-triangle-fill text-danger"></i>&nbsp; <strong>${d.critical_24h} CRITICAL event${d.critical_24h>1?'s':''}</strong> in the last 24 hours — check the Change Events tab.</div>`;
+      banner.classList.remove('d-none');
+    } else {
+      banner.classList.add('d-none');
+    }
+  } catch(e) { console.error('summary', e); }
+}
+
+// ── Port scans ───────────────────────────────────────────────────────────────
+async function loadPorts() {
+  try {
+    const r = await fetch('/api/ports');
+    _portsData = await r.json();
+    document.getElementById('tab-badge-ports').textContent = _portsData.length;
+    renderPorts();
+  } catch(e) { console.error('ports', e); }
+}
+
+function renderPorts() {
+  const filter = (document.getElementById('filter-ports').value || '').toLowerCase();
+  const tbody = document.getElementById('ports-body');
+  const rows = _portsData.filter(h => !filter || h.host.toLowerCase().includes(filter));
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No port scan data yet. Port scans run after the first full scan cycle.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(h => {
+    const portBadges = h.ports.map(p => portBadge(p.port, p.service)).join('');
+    const dur = h.scan_duration ? h.scan_duration.toFixed(1) + 's' : '—';
+    const notes = h.error ? `<span class="text-danger" title="${esc(h.error)}"><i class="bi bi-exclamation-circle"></i> error</span>` : '';
+    return `<tr>
+      <td><code style="color:#58a6ff;">${esc(h.host)}</code></td>
+      <td>${statusDot(h.status)}</td>
+      <td>${portBadges || '<span class="text-muted">none open</span>'}</td>
+      <td class="text-muted">${dur}</td>
+      <td class="text-muted">${fmtDate(h.scanned_at)}</td>
+      <td>${notes}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Subdomains ───────────────────────────────────────────────────────────────
+async function loadSubdomains() {
+  try {
+    const r = await fetch('/api/subdomains');
+    _subdomains = await r.json();
+    document.getElementById('tab-badge-subs').textContent = _subdomains.length;
+    renderSubdomains();
+  } catch(e) { console.error('subdomains', e); }
+}
+
+function renderSubdomains() {
+  const statusFilter = document.getElementById('filter-sub-status').value;
+  const textFilter   = (document.getElementById('filter-subs-text').value || '').toLowerCase();
+  const tbody = document.getElementById('subs-body');
+  const now = Date.now();
+
+  let rows = _subdomains;
+  if (statusFilter) rows = rows.filter(s => s.status === statusFilter);
+  if (textFilter)   rows = rows.filter(s => s.fqdn.toLowerCase().includes(textFilter));
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No subdomains found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(s => {
+    const isNew = s.first_seen && (now - new Date(s.first_seen)) < ONE_DAY_MS;
+    const newTag = isNew ? '<span class="new-badge">NEW</span>' : '';
+    const takeoverTag = s.takeover_vulnerable ? '<span class="takeover-badge"><i class="bi bi-exclamation-triangle-fill"></i> TAKEOVER</span>' : '';
+    const techs = (s.technologies||[]).slice(0,4).map(t => `<span class="badge bg-secondary me-1" style="font-size:.65rem;">${esc(t)}</span>`).join('');
+    const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join('<br>');
+    const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
+    const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
+    return `<tr>
+      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}${takeoverTag}</td>
+      <td>${statusDot(s.status)}</td>
+      <td>${httpCode}</td>
+      <td>${ips || '<span class="text-muted">—</span>'}</td>
+      <td>${ports || '<span class="text-muted">—</span>'}</td>
+      <td>${techs || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${s.first_seen ? new Date(s.first_seen).toLocaleDateString() : '—'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── HTTP Headers ─────────────────────────────────────────────────────────────
+async function loadHeaders() {
+  try {
+    const r = await fetch('/api/headers');
+    _headersData = await r.json();
+    document.getElementById('tab-badge-headers').textContent = _headersData.length;
+    renderHeaders();
+  } catch(e) { console.error('headers', e); }
+}
+
+function renderHeaders() {
+  const tbody = document.getElementById('headers-body');
+  if (!_headersData.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3">No header data yet — runs after first scan cycle.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _headersData.map(h => {
+    const sh = h.security_headers || {};
+    const leaked = Object.entries(h.info_leaked||{}).map(([k,v]) => `<span class="badge bg-warning text-dark me-1" style="font-size:.65rem;" title="${esc(v)}">${esc(k)}: ${esc(String(v).substring(0,30))}</span>`).join('');
+    const code = h.status_code;
+    const codeEl = code ? `<span class="badge ${code < 300 ? 'bg-success' : code < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${code}</span>` : '—';
+    return `<tr>
+      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(h.fqdn)}</code></td>
+      <td>${codeEl}</td>
+      <td>${secHeader(sh['strict-transport-security'])}</td>
+      <td>${secHeader(sh['content-security-policy'])}</td>
+      <td>${secHeader(sh['x-frame-options'])}</td>
+      <td>${secHeader(sh['x-content-type-options'])}</td>
+      <td>${secHeader(sh['referrer-policy'])}</td>
+      <td>${secHeader(sh['permissions-policy'])}</td>
+      <td>${leaked || '<span class="text-success" style="font-size:.75rem;"><i class="bi bi-check2"></i> None</span>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${fmtDate(h.scanned_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Change events ────────────────────────────────────────────────────────────
+async function loadChanges(hours) {
+  try {
+    hours = hours || document.getElementById('filter-hours').value || 48;
+    const r = await fetch('/api/changes?hours=' + hours);
+    _changes = await r.json();
+    document.getElementById('tab-badge-changes').textContent = _changes.length;
+    renderChanges();
+  } catch(e) { console.error('changes', e); }
+}
+
+function reloadChanges() {
+  loadChanges(document.getElementById('filter-hours').value);
+}
+
+function renderChanges() {
+  const sevFilter    = document.getElementById('filter-sev').value;
+  const targetFilter = (document.getElementById('filter-target').value || '').toLowerCase();
+  const tbody = document.getElementById('changes-body');
+
+  const SEV_ORDER = {CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,INFO:4};
+  let rows = _changes;
+  if (sevFilter) {
+    const minLevel = SEV_ORDER[sevFilter] ?? 99;
+    rows = rows.filter(e => (SEV_ORDER[e.severity] ?? 99) <= minLevel);
+  }
+  if (targetFilter) rows = rows.filter(e => e.target.toLowerCase().includes(targetFilter));
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No events found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(e => {
+    const alerted = e.alerted
+      ? '<i class="bi bi-check-circle-fill text-success"></i>'
+      : '<i class="bi bi-dash text-muted"></i>';
+    return `<tr>
+      <td>${sevBadge(e.severity)}</td>
+      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code></td>
+      <td><code style="font-size:.75rem;color:#58a6ff;">${esc(e.target)}</code></td>
+      <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.description)}">${esc(e.description)}</td>
+      <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
+      <td class="text-center">${alerted}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Filter helper for tables with text rows ──────────────────────────────────
+function filterTable(tbodyId, inputId) {
+  if (tbodyId === 'ports-body') { renderPorts(); return; }
+  const text = document.getElementById(inputId).value.toLowerCase();
+  document.querySelectorAll('#' + tbodyId + ' tr').forEach(tr => {
+    tr.style.display = tr.textContent.toLowerCase().includes(text) ? '' : 'none';
+  });
+}
+
+// ── Auto-refresh countdown ───────────────────────────────────────────────────
+function startCountdown() {
+  clearInterval(_timer);
+  _countdown = 60;
+  _timer = setInterval(() => {
+    _countdown--;
+    document.getElementById('refresh-timer').textContent = _countdown + 's';
+    const pct = ((60 - _countdown) / 60 * 100).toFixed(1);
+    document.getElementById('refresh-bar').style.width = pct + '%';
+    if (_countdown <= 0) { refreshAll(false); }
+  }, 1000);
+}
+
+async function refreshAll(manual) {
+  if (manual) {
+    document.getElementById('refresh-timer').textContent = '…';
+  }
+  await Promise.all([loadSummary(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges()]);
+  startCountdown();
+}
+
+// ── Live filter bindings ─────────────────────────────────────────────────────
+document.getElementById('filter-subs-text').addEventListener('input', renderSubdomains);
+document.getElementById('filter-target').addEventListener('input', renderChanges);
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+refreshAll(true);
+</script>
+</body>
+</html>

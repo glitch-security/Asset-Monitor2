@@ -9,10 +9,11 @@ pydantic
 click
 loguru
 aiofiles
-asyncio
 python-dateutil
 tabulate
 jinja2
 cryptography
 aiosmtplib
 rich
+flask
+python-nmap

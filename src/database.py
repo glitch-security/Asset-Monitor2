@@ -17,16 +17,18 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
     Text,
     create_engine,
     event,
+    func,
     select,
     update,
 )
-from sqlalchemy.orm import DeclarativeBase, Session, relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, relationship, selectinload, sessionmaker
 from sqlalchemy.types import TypeDecorator
 
 
@@ -225,6 +227,53 @@ class ChangeEvent(Base):
             f"<ChangeEvent id={self.id} type={self.event_type!r} "
             f"severity={self.severity!r} target={self.target!r}>"
         )
+
+
+class PortScan(Base):
+    """One nmap scan snapshot for a single host."""
+
+    __tablename__ = "port_scans"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    host: str = Column(String(253), nullable=False, index=True)
+    subdomain_id: Optional[int] = Column(
+        Integer, ForeignKey("subdomains.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    scanned_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    status: str = Column(String(16), default="unknown", nullable=False)
+    scan_duration: float = Column(Float, default=0.0, nullable=False)
+    error: Optional[str] = Column(Text, nullable=True)
+
+    open_ports: List["OpenPort"] = relationship(
+        "OpenPort", back_populates="scan_ref", cascade="all, delete-orphan", lazy="select"
+    )
+
+    def __repr__(self) -> str:
+        return f"<PortScan id={self.id} host={self.host!r} status={self.status!r}>"
+
+
+class OpenPort(Base):
+    """A single open port discovered within a PortScan."""
+
+    __tablename__ = "open_ports"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    port_scan_id: int = Column(
+        Integer, ForeignKey("port_scans.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    host: str = Column(String(253), nullable=False)
+    port: int = Column(Integer, nullable=False)
+    protocol: str = Column(String(8), default="tcp", nullable=False)
+    state: str = Column(String(16), default="open", nullable=False)
+    service: str = Column(String(64), default="", nullable=False)
+    product: str = Column(String(128), default="", nullable=False)
+    version: str = Column(String(64), default="", nullable=False)
+    extra_info: str = Column(String(256), default="", nullable=False)
+
+    scan_ref: "PortScan" = relationship("PortScan", back_populates="open_ports")
+
+    def __repr__(self) -> str:
+        return f"<OpenPort id={self.id} host={self.host!r} port={self.port}/{self.protocol}>"
 
 
 class Asset(Base):
@@ -671,6 +720,148 @@ class DatabaseManager:
                     .order_by(ChangeEvent.detected_at.desc())
                 ).all()
             )
+
+    # ------------------------------------------------------------------
+    # Port scan operations
+    # ------------------------------------------------------------------
+
+    def add_port_scan(
+        self,
+        host: str,
+        subdomain_id: Optional[int] = None,
+        status: str = "unknown",
+        scan_duration: float = 0.0,
+        error: Optional[str] = None,
+        ports: Optional[List[Dict[str, Any]]] = None,
+    ) -> "PortScan":
+        """Persist one port scan result and its open ports.
+
+        Args:
+            host:          IP or FQDN that was scanned.
+            subdomain_id:  FK to the Subdomain row (if known).
+            status:        nmap host state: ``"up"``, ``"down"``, ``"error"``.
+            scan_duration: Wall-clock seconds the scan took.
+            error:         Error message if the scan failed.
+            ports:         List of port dicts from the scanner
+                           (keys: port, protocol, state, service, product,
+                           version, extrainfo).
+
+        Returns:
+            The new :class:`PortScan` row.
+        """
+        with self.get_session() as session:
+            scan = PortScan(
+                host=host,
+                subdomain_id=subdomain_id,
+                status=status,
+                scan_duration=scan_duration,
+                error=error,
+            )
+            session.add(scan)
+            session.flush()
+            for p in ports or []:
+                session.add(OpenPort(
+                    port_scan_id=scan.id,
+                    host=host,
+                    port=int(p.get("port", 0)),
+                    protocol=str(p.get("protocol", "tcp")),
+                    state=str(p.get("state", "open")),
+                    service=str(p.get("service", "")),
+                    product=str(p.get("product", "")),
+                    version=str(p.get("version", "")),
+                    extra_info=str(p.get("extrainfo", "")),
+                ))
+            session.flush()
+            session.refresh(scan)
+            return scan
+
+    def get_latest_port_scan(self, host: str) -> Optional["PortScan"]:
+        """Return the most recent :class:`PortScan` for *host*, or ``None``."""
+        with self.get_session() as session:
+            return session.scalar(
+                select(PortScan)
+                .where(PortScan.host == host)
+                .order_by(PortScan.scanned_at.desc())
+                .limit(1)
+            )
+
+    def get_open_ports_for_scan(self, port_scan_id: int) -> List["OpenPort"]:
+        """Return all :class:`OpenPort` rows for a given scan ID."""
+        with self.get_session() as session:
+            return list(
+                session.scalars(
+                    select(OpenPort).where(OpenPort.port_scan_id == port_scan_id)
+                ).all()
+            )
+
+    def get_all_latest_port_scans(self) -> List["PortScan"]:
+        """Return the latest :class:`PortScan` for every distinct host."""
+        with self.get_session() as session:
+            subq = (
+                select(PortScan.host, func.max(PortScan.scanned_at).label("max_at"))
+                .group_by(PortScan.host)
+                .subquery()
+            )
+            rows = session.scalars(
+                select(PortScan)
+                .join(
+                    subq,
+                    (PortScan.host == subq.c.host)
+                    & (PortScan.scanned_at == subq.c.max_at),
+                )
+                .options(selectinload(PortScan.open_ports))
+                .order_by(PortScan.host)
+            ).all()
+            return list(rows)
+
+    def get_dashboard_summary(self) -> Dict[str, Any]:
+        """Return aggregated stats used by the web dashboard summary cards."""
+        from datetime import timedelta
+
+        cutoff_24h = _utcnow() - timedelta(hours=24)
+
+        with self.get_session() as session:
+            total_domains = session.scalar(select(func.count(Domain.id))) or 0
+            total_subs = session.scalar(select(func.count(Subdomain.id))) or 0
+            live_subs = session.scalar(
+                select(func.count(Subdomain.id)).where(Subdomain.status == "alive")
+            ) or 0
+            total_open_ports = session.scalar(select(func.count(OpenPort.id))) or 0
+            hosts_scanned = session.scalar(
+                select(func.count(func.distinct(PortScan.host)))
+            ) or 0
+            events_24h = session.scalar(
+                select(func.count(ChangeEvent.id)).where(
+                    ChangeEvent.detected_at >= cutoff_24h
+                )
+            ) or 0
+            critical_24h = session.scalar(
+                select(func.count(ChangeEvent.id)).where(
+                    ChangeEvent.detected_at >= cutoff_24h,
+                    ChangeEvent.severity == "CRITICAL",
+                )
+            ) or 0
+            high_24h = session.scalar(
+                select(func.count(ChangeEvent.id)).where(
+                    ChangeEvent.detected_at >= cutoff_24h,
+                    ChangeEvent.severity == "HIGH",
+                )
+            ) or 0
+            last_scan_row = session.scalar(
+                select(PortScan.scanned_at).order_by(PortScan.scanned_at.desc()).limit(1)
+            )
+
+        return {
+            "domains": total_domains,
+            "subdomains_total": total_subs,
+            "subdomains_live": live_subs,
+            "open_ports_total": total_open_ports,
+            "hosts_scanned": hosts_scanned,
+            "events_24h": events_24h,
+            "critical_24h": critical_24h,
+            "high_24h": high_24h,
+            "last_port_scan": last_scan_row.isoformat() if last_scan_row else None,
+        }
 
     def get_events_by_severity(self, severity: str) -> List[ChangeEvent]:
         """Return all change events matching a specific severity level.
