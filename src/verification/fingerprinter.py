@@ -209,7 +209,7 @@ async def fingerprint(url: str, headers: dict, body: str) -> list[dict]:
     return detected
 
 
-async def get_favicon_hash(base_url: str, timeout: int = 5) -> Optional[str]:
+async def get_favicon_hash(base_url: str, timeout: int = 5, verify_ssl: bool = True) -> Optional[str]:
     """
     Fetch ``/favicon.ico`` from *base_url* and return its MD5 hex digest.
 
@@ -228,13 +228,13 @@ async def get_favicon_hash(base_url: str, timeout: int = 5) -> Optional[str]:
     favicon_url = base_url.rstrip("/") + "/favicon.ico"
     try:
         async with httpx.AsyncClient(
-            verify=False,
+            verify=verify_ssl,
             timeout=httpx.Timeout(timeout),
             follow_redirects=True,
         ) as client:
             response = await client.get(favicon_url)
             if response.status_code == 200 and response.content:
-                return hashlib.md5(response.content).hexdigest()
+                return hashlib.md5(response.content, usedforsecurity=False).hexdigest()
     except Exception as exc:
         logger.debug("Failed to fetch favicon from %s: %s", favicon_url, exc)
     return None

@@ -144,6 +144,7 @@ class VerificationManager:
                 fqdn,
                 ports=cfg_verification.ports,
                 timeout=cfg_scan.request_timeout_seconds,
+                verify_ssl=cfg_scan.verify_ssl,
             )
             result.update({
                 "live": http_result.get("live", False),
@@ -181,6 +182,7 @@ class VerificationManager:
                     result["favicon_hash"] = await get_favicon_hash(
                         base_url,
                         timeout=cfg_scan.request_timeout_seconds,
+                        verify_ssl=cfg_scan.verify_ssl,
                     )
                 except Exception as exc:
                     logger.debug("Favicon hash failed for %s: %s", fqdn, exc)

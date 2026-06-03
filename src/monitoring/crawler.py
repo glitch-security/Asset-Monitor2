@@ -52,6 +52,7 @@ class BFSCrawler:
         timeout: int = 10,
         respect_robots: bool = False,
         user_agent: str = "",
+        verify_ssl: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_depth = max_depth
@@ -59,6 +60,7 @@ class BFSCrawler:
         self.timeout = timeout
         self.respect_robots = respect_robots
         self.user_agent = user_agent or _DEFAULT_UA
+        self.verify_ssl = verify_ssl
 
         parsed = urllib.parse.urlparse(self.base_url)
         self.base_netloc: str = parsed.netloc
@@ -98,7 +100,7 @@ class BFSCrawler:
         self._visited.add(self.base_url)
 
         async with httpx.AsyncClient(
-            verify=False,
+            verify=self.verify_ssl,
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=True,
             max_redirects=5,
@@ -291,7 +293,7 @@ class BFSCrawler:
         robots_url = f"{self.base_url}/robots.txt"
         try:
             async with httpx.AsyncClient(
-                verify=False,
+                verify=self.verify_ssl,
                 timeout=httpx.Timeout(self.timeout),
             ) as client:
                 resp = await client.get(robots_url)

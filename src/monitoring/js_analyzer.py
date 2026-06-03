@@ -73,7 +73,7 @@ def _looks_like_path(s: str) -> bool:
     return bool(_PATH_LIKE.match(s))
 
 
-async def analyze_js_file(url: str, domain: str, timeout: int = 10) -> dict:
+async def analyze_js_file(url: str, domain: str, timeout: int = 10, verify_ssl: bool = True) -> dict:
     """
     Download and analyze a JavaScript file for security-relevant content.
 
@@ -115,7 +115,7 @@ async def analyze_js_file(url: str, domain: str, timeout: int = 10) -> dict:
     source_map_content: Optional[str] = None
 
     async with httpx.AsyncClient(
-        verify=False,
+        verify=verify_ssl,
         timeout=httpx.Timeout(timeout),
         follow_redirects=True,
     ) as client:

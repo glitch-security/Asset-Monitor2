@@ -29,7 +29,6 @@ from src.database import (
     ChangeEvent,
     DatabaseManager,
     Domain,
-    Endpoint,
     Subdomain,
 )
 
@@ -263,9 +262,14 @@ def _report_subdomains(
 
     for sub in rows:
         status_style = "green" if sub.status == "alive" else "dim"
-        techs = ", ".join((sub.technologies or [])[:3])
-        if sub.technologies and len(sub.technologies) > 3:
-            techs += f" +{len(sub.technologies) - 3}"
+        tech_list = sub.technologies or []
+        tech_names = [
+            t.get("name", str(t)) if isinstance(t, dict) else str(t)
+            for t in tech_list
+        ]
+        techs = ", ".join(tech_names[:3])
+        if len(tech_names) > 3:
+            techs += f" +{len(tech_names) - 3}"
         table.add_row(
             sub.fqdn,
             f"[{status_style}]{sub.status}[/{status_style}]",
@@ -495,8 +499,8 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
       docker-compose exec assetmonitor python assetmonitor.py reset-admin
       docker-compose exec assetmonitor python assetmonitor.py reset-admin --password mysecret
     """
-    import hashlib
     import secrets as _secrets
+    import bcrypt as _bcrypt
 
     db: DatabaseManager = ctx.obj["db"]
 
@@ -507,7 +511,7 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
         new_pwd = _secrets.token_urlsafe(12)
         generated = True
 
-    password_hash = "sha256:" + hashlib.sha256(new_pwd.encode()).hexdigest()
+    password_hash = "bcrypt:" + _bcrypt.hashpw(new_pwd.encode(), _bcrypt.gensalt()).decode()
     db.set_user("admin", password_hash, "admin")
 
     if generated:
@@ -515,7 +519,7 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
             "[bold yellow]┌─ ADMIN PASSWORD RESET ────────────────────────────────────────────┐[/bold yellow]"
         )
         console.print(
-            f"[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
+            "[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
         )
         console.print(
             f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{new_pwd}[/bold cyan]"
@@ -551,21 +555,21 @@ def daemon(ctx: click.Context) -> None:
     temp_pwd = db.ensure_default_admin()
     if temp_pwd:
         console.print(
-            f"[bold yellow]┌─ DEFAULT ADMIN CREDENTIALS ──────────────────────────────────────┐[/bold yellow]"
+            "[bold yellow]┌─ DEFAULT ADMIN CREDENTIALS ──────────────────────────────────────┐[/bold yellow]"
         )
         console.print(
-            f"[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
+            "[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
         )
         console.print(
             f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{temp_pwd}[/bold cyan]"
         )
         console.print(
-            f"[bold yellow]│  Change via Settings → Users after first login.                  │[/bold yellow]"
+            "[bold yellow]│  Change via Settings → Users after first login.                  │[/bold yellow]"
         )
         console.print(
-            f"[bold yellow]└──────────────────────────────────────────────────────────────────┘[/bold yellow]"
+            "[bold yellow]└──────────────────────────────────────────────────────────────────┘[/bold yellow]"
         )
-        logger.info("Default admin user created. Password: %s", temp_pwd)
+        logger.info("Default admin user created — log in and change the password shown above.")
 
     notif_mgr = NotificationManager(config, db)
     sched = SchedManager(config, db, notif_mgr)

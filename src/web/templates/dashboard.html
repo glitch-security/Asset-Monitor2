@@ -813,6 +813,14 @@ let _profilesData = [];
 let _countdown   = 60;
 let _timer       = null;
 let _scanPollTimer = null;
+let _csrfToken   = null;
+
+// Wrapper for all mutating fetch calls — automatically adds CSRF header
+function _mfetch(url, options = {}) {
+  const headers = Object.assign({'Content-Type': 'application/json'}, options.headers || {});
+  if (_csrfToken) headers['X-CSRF-Token'] = _csrfToken;
+  return fetch(url, Object.assign({}, options, {headers}));
+}
 const ONE_DAY_MS = 86400000;
 
 // Domain detail state
@@ -1419,9 +1427,8 @@ async function submitAssignProfile() {
   const btn = document.getElementById('assign-profile-btn');
   btn.disabled = true;
   try {
-    const r = await fetch(`/api/targets/domain/${_assignDomainId}`, {
+    const r = await _mfetch(`/api/targets/domain/${_assignDomainId}`, {
       method: 'PATCH',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({profile_id: profileId}),
     });
     const d = await r.json();
@@ -1509,7 +1516,7 @@ async function submitProfile() {
   try {
     const url = _editProfileId ? `/api/profiles/${_editProfileId}` : '/api/profiles';
     const method = _editProfileId ? 'PUT' : 'POST';
-    const r = await fetch(url, {method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const r = await _mfetch(url, {method, body: JSON.stringify(body)});
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);
     bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
@@ -1522,7 +1529,7 @@ async function submitProfile() {
 async function deleteProfile(id, name) {
   if (!confirm(`Delete profile "${name}"?\nDomains using this profile will revert to Default.`)) return;
   try {
-    const r = await fetch(`/api/profiles/${id}`, {method:'DELETE'});
+    const r = await _mfetch(`/api/profiles/${id}`, {method:'DELETE'});
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
     showToast(`Deleted profile: ${name}`, 'success');
     await Promise.all([loadProfiles(), loadTargets()]);
@@ -1600,9 +1607,8 @@ async function submitAddTarget() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Adding...';
   try {
-    const r = await fetch('/api/targets', {
+    const r = await _mfetch('/api/targets', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({type, value, scan_now: scanNow, techniques}),
     });
     const d = await r.json();
@@ -1610,9 +1616,8 @@ async function submitAddTarget() {
 
     // Assign profile if one was selected and this is a domain
     if (type === 'domain' && profileId && d.id) {
-      await fetch(`/api/targets/domain/${d.id}`, {
+      await _mfetch(`/api/targets/domain/${d.id}`, {
         method: 'PATCH',
-        headers: {'Content-Type':'application/json'},
         body: JSON.stringify({profile_id: profileId}),
       });
     }
@@ -1634,7 +1639,7 @@ async function submitAddTarget() {
 async function deleteDomain(id, name) {
   if (!confirm(`Delete domain "${name}" and all its subdomains?\n\nThis cannot be undone.`)) return;
   try {
-    const r = await fetch(`/api/targets/domain/${id}`, {method: 'DELETE'});
+    const r = await _mfetch(`/api/targets/domain/${id}`, {method: 'DELETE'});
     if (!r.ok) throw new Error((await r.json()).error || r.statusText);
     showToast(`Deleted domain: ${name}`, 'success');
     if (_ddDomainId === id) closeDomainDetail();
@@ -1645,9 +1650,8 @@ async function deleteDomain(id, name) {
 
 async function triggerDomainScan(domain) {
   try {
-    const r = await fetch('/api/scan/trigger', {
+    const r = await _mfetch('/api/scan/trigger', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({domain}),
     });
     const d = await r.json();
@@ -1659,9 +1663,8 @@ async function triggerDomainScan(domain) {
 
 async function triggerFullScan() {
   try {
-    const r = await fetch('/api/scan/trigger', {
+    const r = await _mfetch('/api/scan/trigger', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({}),
     });
     const d = await r.json();
@@ -1852,9 +1855,8 @@ async function saveSettings() {
   const statusEl = document.getElementById('settings-status');
   statusEl.textContent = 'Saving…';
   try {
-    const r = await fetch('/api/settings', {
+    const r = await _mfetch('/api/settings', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify(payload),
     });
     const d = await r.json();
@@ -1917,9 +1919,8 @@ async function createUser() {
   const role     = document.getElementById('new-role').value;
   if (!username || !password) { showToast('Username and password required', 'warning'); return; }
   try {
-    const r = await fetch('/api/users', {
+    const r = await _mfetch('/api/users', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({username, password, role}),
     });
     const d = await r.json();
@@ -1935,7 +1936,7 @@ async function createUser() {
 async function deleteUser(username) {
   if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
   try {
-    const r = await fetch(`/api/users/${encodeURIComponent(username)}`, {method: 'DELETE'});
+    const r = await _mfetch(`/api/users/${encodeURIComponent(username)}`, {method: 'DELETE'});
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);
     showToast(`Deleted user: ${username}`, 'success');
@@ -1948,9 +1949,8 @@ async function changeMyPassword() {
   if (!newPwd) { showToast('Enter a new password', 'warning'); return; }
   if (!_sessionUser) { showToast('Not logged in', 'warning'); return; }
   try {
-    const r = await fetch(`/api/users/${encodeURIComponent(_sessionUser)}/password`, {
+    const r = await _mfetch(`/api/users/${encodeURIComponent(_sessionUser)}/password`, {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({password: newPwd}),
     });
     const d = await r.json();
@@ -1965,6 +1965,7 @@ async function loadSession() {
     const r = await fetch('/api/session');
     const d = await r.json();
     _sessionUser = d.username || null;
+    _csrfToken   = d.csrf_token || null;
     const el = document.getElementById('nav-username');
     if (el && d.username) el.textContent = d.username;
   } catch(e) {}

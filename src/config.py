@@ -28,6 +28,9 @@ class ScanConfig(BaseModel):
     respect_robots_txt: bool = False
     max_crawl_depth: int = 3
     max_pages_per_domain: int = 500
+    crawl_enabled: bool = True
+    # Set to False only for environments with self-signed certificates; logs a warning
+    verify_ssl: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +40,7 @@ class ScanConfig(BaseModel):
 class EnumerationTechniques(BaseModel):
     certificate_transparency: bool = True
     dns_bruteforce: bool = True
+    dns_records: bool = True
     passive_dns: bool = True
     wayback_machine: bool = True
     search_engine_dorking: bool = False

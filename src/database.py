@@ -339,6 +339,8 @@ class AppSetting(Base):
 
 def _apply_config_overrides(model: Any, overrides: Dict[str, Any]) -> None:
     """Recursively set override values on a Pydantic model tree."""
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
     for key, value in overrides.items():
         if isinstance(value, dict) and hasattr(model, key):
             sub = getattr(model, key)
@@ -347,8 +349,10 @@ def _apply_config_overrides(model: Any, overrides: Dict[str, Any]) -> None:
         elif hasattr(model, key):
             try:
                 setattr(model, key, value)
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.warning(
+                    "Config override ignored — %s=%r: %s", key, value, exc
+                )
 
 
 # Built-in profile definitions — seeded once on first run.
@@ -1390,7 +1394,6 @@ class DatabaseManager:
 
         with self.get_session() as session:
             session.execute(_delete(AppSetting).where(AppSetting.key.like("config.%")))
-            session.flush()
             for dotted_key, value in _flatten(overrides):
                 serialized = json.dumps(value) if not isinstance(value, str) else value
                 session.add(AppSetting(
@@ -1446,16 +1449,36 @@ class DatabaseManager:
             return True
 
     def verify_password(self, username: str, password: str) -> Optional[str]:
-        """Return the user's role if credentials are valid, else None."""
+        """Return the user's role if credentials are valid, else None.
+
+        Supports bcrypt hashes (``bcrypt:<hash>``) and legacy unsalted SHA-256
+        (``sha256:<hex>``). On a successful SHA-256 login the hash is silently
+        upgraded to bcrypt in-place.
+        """
         import hashlib
+        import bcrypt as _bcrypt
+
         user = self.get_user(username)
         if user is None:
             return None
         stored_hash = user.get("password_hash", "")
+        role = user.get("role", "viewer")
+
+        if stored_hash.startswith("bcrypt:"):
+            hash_bytes = stored_hash[7:].encode()
+            if _bcrypt.checkpw(password.encode(), hash_bytes):
+                return role
+            return None
+
         if stored_hash.startswith("sha256:"):
             expected = "sha256:" + hashlib.sha256(password.encode()).hexdigest()
             if stored_hash == expected:
-                return user.get("role", "viewer")
+                # Upgrade to bcrypt on first successful login
+                new_hash = "bcrypt:" + _bcrypt.hashpw(
+                    password.encode(), _bcrypt.gensalt()
+                ).decode()
+                self.set_user(username, new_hash, role)
+                return role
         return None
 
     def get_or_create_flask_secret(self) -> str:
@@ -1476,20 +1499,21 @@ class DatabaseManager:
         Otherwise, if no users exist, a random password is generated and returned
         so the caller can log it.
         """
-        import hashlib
         import os
         import secrets as _secrets
+        import bcrypt as _bcrypt
+
+        def _hash(pwd: str) -> str:
+            return "bcrypt:" + _bcrypt.hashpw(pwd.encode(), _bcrypt.gensalt()).decode()
 
         env_secret = os.environ.get("DASHBOARD_SECRET", "").strip()
         if env_secret:
-            password_hash = "sha256:" + hashlib.sha256(env_secret.encode()).hexdigest()
-            self.set_user("admin", password_hash, "admin")
+            self.set_user("admin", _hash(env_secret), "admin")
             return None  # operator knows the password
 
         if self.list_users():
             return None  # users already exist
 
         temp_password = _secrets.token_urlsafe(12)
-        password_hash = "sha256:" + hashlib.sha256(temp_password.encode()).hexdigest()
-        self.set_user("admin", password_hash, "admin")
+        self.set_user("admin", _hash(temp_password), "admin")
         return temp_password

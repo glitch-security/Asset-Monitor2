@@ -7,13 +7,13 @@ apscheduler
 pyyaml
 pydantic
 click
-loguru
 aiofiles
 python-dateutil
-tabulate
 jinja2
 cryptography
 aiosmtplib
 rich
 flask
+flask-limiter
+bcrypt
 python-nmap

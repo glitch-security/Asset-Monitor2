@@ -40,6 +40,7 @@ async def probe_subdomain(
     fqdn: str,
     ports: list[int] | None = None,
     timeout: int = 10,
+    verify_ssl: bool = True,
 ) -> dict:
     """
     Probe *fqdn* for HTTP/HTTPS liveness across the supplied *ports*.
@@ -107,7 +108,7 @@ async def probe_subdomain(
 
         try:
             async with httpx.AsyncClient(
-                verify=False,
+                verify=verify_ssl,
                 timeout=httpx.Timeout(timeout),
                 follow_redirects=True,
                 max_redirects=10,

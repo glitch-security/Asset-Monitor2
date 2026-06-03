@@ -29,6 +29,14 @@ scan:
   # Maximum number of pages to crawl per domain per scan cycle.
   max_pages_per_domain: 500
 
+  # Enable or disable the BFS web crawler entirely.
+  # Set false to skip crawling (faster scans, no endpoint discovery).
+  crawl_enabled: true
+
+  # Verify TLS/SSL certificates when making HTTPS requests.
+  # Set false only in controlled lab environments with self-signed certs.
+  verify_ssl: true
+
 
 # -----------------------------------------------------------------------------
 # Enumeration — subdomain discovery techniques and DNS settings
@@ -62,6 +70,9 @@ enumeration:
 
     # Reverse-IP lookup to find co-hosted domains.
     reverse_ip: true
+
+    # Enumerate DNS records (A, AAAA, MX, NS, TXT, SOA, CNAME) for the apex domain.
+    dns_records: true
 
   # Path to the subdomain wordlist used during DNS bruteforce.
   # Default (243 entries): "./wordlists/subdomains.txt"

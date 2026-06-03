@@ -100,6 +100,7 @@ def _parse_disallow(robots_body: str) -> list[str]:
 async def check_security_files(
     base_url: str,
     timeout: int = 10,
+    verify_ssl: bool = True,
 ) -> dict:
     """
     Check for the presence of sensitive files and directories.
@@ -129,7 +130,7 @@ async def check_security_files(
     disallow_paths: list[str] = []
 
     async with httpx.AsyncClient(
-        verify=False,
+        verify=verify_ssl,
         timeout=httpx.Timeout(timeout),
         follow_redirects=False,
     ) as client:

@@ -45,6 +45,8 @@ def _apply_profile_to_config(config: AppConfig, settings: dict) -> None:
         config.scan.max_crawl_depth = int(crawl_settings["max_depth"])
     if "max_pages" in crawl_settings:
         config.scan.max_pages_per_domain = int(crawl_settings["max_pages"])
+    if "enabled" in crawl_settings:
+        config.scan.crawl_enabled = bool(crawl_settings["enabled"])
 
 
 _SUBDOMAINS_FILE = "data/subdomains.txt"
@@ -235,7 +237,7 @@ class SchedManager:
         # 4. Websites from websites.txt
         # ----------------------------------------------------------------
         websites = _read_lines(_WEBSITES_FILE)
-        if websites:
+        if websites and self._config.scan.crawl_enabled:
             logger.info(
                 "Processing %d website(s) from %s", len(websites), _WEBSITES_FILE
             )
@@ -379,6 +381,23 @@ class SchedManager:
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Wayback enumeration failed for %s: %s", dom.domain, exc
+                )
+
+        # DNS records (MX, NS, CNAME, A)
+        if techniques.dns_records:
+            try:
+                from src.enumeration.dns_records import enumerate_dns_records
+
+                dr_fqdns = await enumerate_dns_records(dom.domain)
+                discovered_fqdns.update(dr_fqdns)
+                logger.debug(
+                    "DNS records found %d FQDNs for %s", len(dr_fqdns), dom.domain
+                )
+            except ImportError:
+                logger.debug("dns_records module not available — skipping")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "DNS records enumeration failed for %s: %s", dom.domain, exc
                 )
 
         # DNS bruteforce

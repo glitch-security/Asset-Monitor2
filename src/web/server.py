@@ -39,11 +39,16 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import secrets
 import threading
 from datetime import datetime, timedelta, timezone
+from functools import wraps
 from typing import TYPE_CHECKING, Any, Optional
 
 from flask import Flask, jsonify, redirect, render_template, request, session
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 if TYPE_CHECKING:
     from ..config import AppConfig
@@ -51,6 +56,14 @@ if TYPE_CHECKING:
     from ..scheduler import SchedManager
 
 logger = logging.getLogger(__name__)
+
+# Compiled once — RFC 1123 / RFC 5321 domain name validation
+_DOMAIN_RE = re.compile(
+    r"^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?"
+    r"(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*)$"
+)
+
+_limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 _TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -100,14 +113,17 @@ def create_app(
     sched_manager: Optional["SchedManager"] = None,
 ) -> Flask:
     app = Flask(__name__, template_folder=_TEMPLATE_DIR)
+    _limiter.init_app(app)
 
     # Stable secret key — persists across container restarts via DB
     app.secret_key = db.get_or_create_flask_secret()
     app.permanent_session_lifetime = timedelta(days=30)
 
     # ------------------------------------------------------------------ #
-    # Auth gate
+    # Auth gate + CSRF validation
     # ------------------------------------------------------------------ #
+
+    _CSRF_EXEMPT_METHODS = frozenset(["GET", "HEAD", "OPTIONS"])
 
     @app.before_request
     def _require_login():
@@ -118,7 +134,38 @@ def create_app(
             if path.startswith("/api/"):
                 return jsonify({"error": "Unauthorized"}), 401
             return redirect("/login")
+        # CSRF check for all mutating requests from authenticated sessions
+        if request.method not in _CSRF_EXEMPT_METHODS:
+            expected = session.get("csrf_token")
+            provided = request.headers.get("X-CSRF-Token")
+            if not expected or not secrets.compare_digest(expected, provided or ""):
+                if path.startswith("/api/"):
+                    return jsonify({"error": "CSRF token invalid"}), 403
+                return redirect("/login")
         return None
+
+    # ------------------------------------------------------------------ #
+    # Require-admin decorator
+    # ------------------------------------------------------------------ #
+
+    def require_admin(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if session.get("role") != "admin":
+                return jsonify({"error": "Forbidden — admin role required"}), 403
+            return f(*args, **kwargs)
+        return decorated
+
+    # ------------------------------------------------------------------ #
+    # Security response headers
+    # ------------------------------------------------------------------ #
+
+    @app.after_request
+    def _add_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
     # ------------------------------------------------------------------ #
     # Login / logout
@@ -131,6 +178,7 @@ def create_app(
         return render_template("login.html")
 
     @app.route("/login", methods=["POST"])
+    @_limiter.limit("5 per minute")
     def login_submit():
         data = request.get_json(silent=True) or {}
         username = (data.get("username") or "").strip()
@@ -140,10 +188,13 @@ def create_app(
         role = db.verify_password(username, password)
         if role is None:
             return jsonify({"error": "Invalid credentials"}), 401
+        # Regenerate session to prevent fixation
+        session.clear()
         session.permanent = True
         session["authenticated"] = True
         session["username"] = username
         session["role"] = role
+        session["csrf_token"] = secrets.token_hex(32)
         return jsonify({"ok": True, "username": username, "role": role})
 
     @app.route("/logout")
@@ -177,6 +228,7 @@ def create_app(
             "authenticated": session.get("authenticated", False),
             "username": session.get("username"),
             "role": session.get("role"),
+            "csrf_token": session.get("csrf_token"),
         })
 
     # ------------------------------------------------------------------ #
@@ -297,6 +349,9 @@ def create_app(
     def api_changes():
         try:
             hours = int(request.args.get("hours", 48))
+        except (ValueError, TypeError):
+            return jsonify({"error": "hours must be a positive integer"}), 400
+        try:
             hours = min(max(hours, 1), 8760)
             events = db.get_recent_events(hours=hours)
             return jsonify([_ev_to_dict(e) for e in events])
@@ -373,6 +428,7 @@ def create_app(
     # ------------------------------------------------------------------ #
 
     @app.route("/api/targets", methods=["POST"])
+    @require_admin
     def api_add_target():
         data = request.get_json(silent=True) or {}
         target_type = (data.get("type") or "").lower()
@@ -384,6 +440,9 @@ def create_app(
             return jsonify({"error": "value is required"}), 400
         if target_type not in ("domain", "subdomain", "website"):
             return jsonify({"error": "type must be domain, subdomain, or website"}), 400
+        if target_type in ("domain", "subdomain"):
+            if len(value) > 253 or not _DOMAIN_RE.match(value):
+                return jsonify({"error": "Invalid domain name"}), 400
 
         try:
             if target_type == "domain":
@@ -428,6 +487,7 @@ def create_app(
     # ------------------------------------------------------------------ #
 
     @app.route("/api/targets/domain/<int:domain_id>", methods=["PATCH"])
+    @require_admin
     def api_patch_domain(domain_id: int):
         data = request.get_json(silent=True) or {}
         if "profile_id" not in data:
@@ -477,6 +537,7 @@ def create_app(
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/profiles", methods=["POST"])
+    @require_admin
     def api_create_profile():
         data = request.get_json(silent=True) or {}
         name = (data.get("name") or "").strip()
@@ -498,6 +559,7 @@ def create_app(
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/profiles/<int:profile_id>", methods=["PUT"])
+    @require_admin
     def api_update_profile(profile_id: int):
         data = request.get_json(silent=True) or {}
         try:
@@ -515,6 +577,7 @@ def create_app(
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/profiles/<int:profile_id>", methods=["DELETE"])
+    @require_admin
     def api_delete_profile(profile_id: int):
         try:
             deleted = db.delete_profile(profile_id)
@@ -530,6 +593,7 @@ def create_app(
     # ------------------------------------------------------------------ #
 
     @app.route("/api/targets/domain/<int:domain_id>", methods=["DELETE"])
+    @require_admin
     def api_delete_domain(domain_id: int):
         try:
             deleted = db.delete_domain(domain_id)
@@ -545,6 +609,7 @@ def create_app(
     # ------------------------------------------------------------------ #
 
     @app.route("/api/scan/trigger", methods=["POST"])
+    @require_admin
     def api_scan_trigger():
         if not sched_manager:
             return jsonify({"error": "Scheduler not available in this mode"}), 503
@@ -587,6 +652,7 @@ def create_app(
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/settings", methods=["POST"])
+    @require_admin
     def api_post_settings():
         data = request.get_json(silent=True) or {}
         try:
@@ -616,8 +682,9 @@ def create_app(
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/users", methods=["POST"])
+    @require_admin
     def api_create_user():
-        import hashlib
+        import bcrypt as _bcrypt
         data = request.get_json(silent=True) or {}
         username = (data.get("username") or "").strip()
         password = data.get("password") or ""
@@ -627,13 +694,16 @@ def create_app(
         if role not in ("admin", "viewer"):
             return jsonify({"error": "role must be admin or viewer"}), 400
         try:
-            password_hash = "sha256:" + hashlib.sha256(password.encode()).hexdigest()
+            password_hash = "bcrypt:" + _bcrypt.hashpw(
+                password.encode(), _bcrypt.gensalt()
+            ).decode()
             db.set_user(username, password_hash, role)
             return jsonify({"created": True, "username": username, "role": role}), 201
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/users/<username>", methods=["DELETE"])
+    @require_admin
     def api_delete_user(username: str):
         if username == session.get("username"):
             return jsonify({"error": "Cannot delete currently logged-in user"}), 400
@@ -647,7 +717,7 @@ def create_app(
 
     @app.route("/api/users/<username>/password", methods=["POST"])
     def api_change_password(username: str):
-        import hashlib
+        import bcrypt as _bcrypt
         if session.get("role") != "admin" and username != session.get("username"):
             return jsonify({"error": "Forbidden"}), 403
         data = request.get_json(silent=True) or {}
@@ -658,7 +728,9 @@ def create_app(
             user = db.get_user(username)
             if user is None:
                 return jsonify({"error": "User not found"}), 404
-            password_hash = "sha256:" + hashlib.sha256(new_password.encode()).hexdigest()
+            password_hash = "bcrypt:" + _bcrypt.hashpw(
+                new_password.encode(), _bcrypt.gensalt()
+            ).decode()
             db.set_user(username, password_hash, user.get("role", "viewer"))
             return jsonify({"updated": True})
         except Exception as exc:
