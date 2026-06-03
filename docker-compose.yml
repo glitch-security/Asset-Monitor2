@@ -35,10 +35,11 @@ services:
       # is generated and printed to the container log on first start.
       # DASHBOARD_SECRET: "changeme"
 
-    # Resource limits (non-swarm / plain docker compose syntax)
-    mem_limit: 768m
-    cpus: "2.0"
-    memswap_limit: 768m
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 768M
 
     # NET_RAW enables SYN-mode nmap scanning (-sS) from the non-root user.
     # Remove if you prefer TCP-connect-only scanning with no capabilities.
