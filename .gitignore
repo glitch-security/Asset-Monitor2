@@ -38,6 +38,9 @@ config.yaml
 domains.txt
 subdomains.txt
 websites.txt
+data/domains.txt
+data/subdomains.txt
+data/websites.txt
 
 # ----- Generated reports -----
 report.json
@@ -72,5 +75,9 @@ coverage.xml
 .mypy_cache/
 .pyright/
 
-# ----- Agent-internal codebase reference -----
+# ----- Agent-internal / operational docs (not for public repo) -----
 CODEBASE.md
+TESTING_INSTRUCTIONS.md
+TEST_REPORT.md
+*_REPORT.md
+*_INSTRUCTIONS.md
