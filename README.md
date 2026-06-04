@@ -145,12 +145,12 @@ docker compose build && docker compose up -d
 docker compose exec assetmonitor bash
 
 # Trigger a manual scan
-docker compose exec assetmonitor python assetmonitor.py scan
+docker compose exec assetmonitor python assetmonitor.py --config /app/config.yaml --db /app/data/assetmonitor.db scan
 
 # Reset admin password (if locked out)
-docker compose exec assetmonitor python assetmonitor.py reset-admin
+docker compose exec assetmonitor python assetmonitor.py --db /app/data/assetmonitor.db reset-admin
 # or with a specific password:
-docker compose exec assetmonitor python assetmonitor.py reset-admin --password newpassword
+docker compose exec assetmonitor python assetmonitor.py --db /app/data/assetmonitor.db reset-admin --password newpassword
 ```
 
 ---
@@ -161,10 +161,10 @@ If you are locked out:
 
 ```bash
 # Generate a new random password and print it
-docker compose exec assetmonitor python assetmonitor.py reset-admin
+docker compose exec assetmonitor python assetmonitor.py --db /app/data/assetmonitor.db reset-admin
 
 # Or set a specific password
-docker compose exec assetmonitor python assetmonitor.py reset-admin --password mypassword
+docker compose exec assetmonitor python assetmonitor.py --db /app/data/assetmonitor.db reset-admin --password mypassword
 ```
 
 Or set `DASHBOARD_SECRET` in `docker-compose.yml` and restart — the password is synced on every start.

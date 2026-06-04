@@ -53,5 +53,5 @@ USER assetmon
 EXPOSE 5000
 
 # ── Entry point ────────────────────────────────────────────────────────────
-ENTRYPOINT ["python", "assetmonitor.py"]
-CMD ["daemon", "--config", "/app/config.yaml", "--db", "/app/data/assetmonitor.db"]
+ENTRYPOINT ["python", "assetmonitor.py", "--config", "/app/config.yaml", "--db", "/app/data/assetmonitor.db"]
+CMD ["daemon"]
