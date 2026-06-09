@@ -200,7 +200,7 @@ def build_app(
     async def login_page(request: Request):
         if request.session.get("authenticated"):
             return RedirectResponse(url="/", status_code=302)
-        return templates.TemplateResponse("login.html", {"request": request})
+        return templates.TemplateResponse(request, "login.html")
 
     @app.post("/login")
     @limiter.limit("5/minute")
@@ -238,7 +238,7 @@ def build_app(
 
     @app.get("/")
     async def dashboard(request: Request):
-        return templates.TemplateResponse("dashboard.html", {"request": request})
+        return templates.TemplateResponse(request, "dashboard.html")
 
     # ────────────────────────────────────────────────────────────────────────
     # API — session
