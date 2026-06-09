@@ -1,121 +1,226 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AssetMonitor — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <style>
-    body { background: #0d1117; color: #c9d1d9; font-size: 0.875rem; }
-    .navbar-brand { font-weight: 700; letter-spacing: .5px; }
-    .card { background: #161b22; border: 1px solid #30363d; }
-    .card-header { background: #1c2128; border-bottom: 1px solid #30363d; font-weight: 600; }
-    .table { color: #c9d1d9; }
-    .table thead th { background: #1c2128; border-color: #30363d; color: #8b949e; font-size: .75rem; text-transform: uppercase; letter-spacing: .5px; }
-    .table td, .table th { border-color: #21262d; vertical-align: middle; }
-    .table-hover tbody tr:hover { background: #1c2128; }
-    .stat-card { border: 1px solid #30363d; background: #161b22; border-radius: 8px; padding: 1rem 1.25rem; }
-    .stat-num { font-size: 1.75rem; font-weight: 700; line-height: 1; }
-    .stat-label { font-size: .75rem; color: #8b949e; margin-top: .25rem; text-transform: uppercase; letter-spacing: .5px; }
-    .badge-CRITICAL { background: #da3633 !important; }
-    .badge-HIGH     { background: #d29922 !important; color: #0d1117 !important; }
-    .badge-MEDIUM   { background: #e3b341 !important; color: #0d1117 !important; }
-    .badge-LOW      { background: #388bfd !important; }
-    .badge-INFO     { background: #484f58 !important; }
-    .dot-alive  { width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px; }
-    .dot-dead   { width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block;margin-right:5px; }
-    .dot-unknown{ width:8px;height:8px;border-radius:50%;background:#484f58;display:inline-block;margin-right:5px; }
-    .dot-up     { width:8px;height:8px;border-radius:50%;background:#3fb950;display:inline-block;margin-right:5px; }
-    .dot-down   { width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block;margin-right:5px; }
-    .port-badge { display:inline-block;padding:1px 6px;border-radius:4px;font-size:.72rem;font-family:monospace;margin:1px; }
-    .port-web   { background:#1d3461;color:#58a6ff;border:1px solid #388bfd44; }
-    .port-db    { background:#3d1f00;color:#e3b341;border:1px solid #d2992244; }
-    .port-ssh   { background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044; }
-    .port-risky { background:#3d1111;color:#f85149;border:1px solid #da363344; }
-    .port-other { background:#1c2128;color:#8b949e;border:1px solid #30363d; }
-    .port-new   { animation: pulse-port 1.5s ease-in-out 3; }
-    @keyframes pulse-port { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 6px #f85149;} }
-    .sec-present { color:#3fb950;font-size:.8rem; }
-    .sec-missing  { color:#f85149;font-size:.8rem; }
-    .section-title { font-size:.8rem;text-transform:uppercase;letter-spacing:.8px;color:#8b949e;font-weight:600; }
-    .text-muted { color: #8b949e !important; }
-    .alert-critical { background:#3d1111;border:1px solid #da3633;border-radius:6px;padding:.75rem 1rem; }
-    .new-badge { font-size:.65rem;background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044;padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
-    .takeover-badge { font-size:.65rem;background:#3d1111;color:#f85149;border:1px solid #da363344;padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
-    #refresh-bar { height:2px;background:#388bfd;transition:width 1s linear; }
-    .tab-custom .nav-link { color:#8b949e;border:none;border-bottom:2px solid transparent;border-radius:0;padding:.5rem .75rem;font-size:.8rem; }
-    .tab-custom .nav-link.active { color:#58a6ff;border-bottom-color:#388bfd;background:transparent; }
-    ::-webkit-scrollbar { width:6px;height:6px; }
-    ::-webkit-scrollbar-track { background:#0d1117; }
-    ::-webkit-scrollbar-thumb { background:#30363d;border-radius:3px; }
-    .domain-stat { font-size:.75rem;color:#8b949e; }
+    :root {
+      --bg: #08090a; --panel: #0f1011; --surface: #191a1b; --surface-hover: #28282c;
+      --text1: #f7f8f8; --text2: #d0d6e0; --text3: #8a8f98; --text4: #62666d;
+      --accent: #7170ff; --accent-h: #828fff; --brand: #5e6ad2;
+      --border: rgba(255,255,255,0.08); --border-sub: rgba(255,255,255,0.05);
+      --green: #27a644; --red: #da3633; --amber: #e3b341; --blue: #388bfd;
+      --mono: ui-monospace,'SF Mono',Menlo,Monaco,monospace;
+      --radius: 6px; --radius-sm: 4px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      background: var(--bg); color: var(--text2);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-size: 0.8125rem; font-feature-settings: "cv01","ss03";
+      -webkit-font-smoothing: antialiased;
+    }
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:var(--bg); }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.12); border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.2); }
+
+    /* ── Navbar ── */
+    .am-nav { background:var(--panel); border-bottom:1px solid var(--border-sub); padding:0 1rem; height:48px; display:flex; align-items:center; position:sticky; top:2px; z-index:9000; }
+    .am-nav-brand { font-size:.8125rem; font-weight:510; color:var(--text1); letter-spacing:-.01em; cursor:pointer; display:flex; align-items:center; gap:7px; text-decoration:none; background:none; border:none; padding:0; }
+    .am-nav-brand i { color:var(--accent); font-size:1rem; }
+    .am-nav-right { margin-left:auto; display:flex; align-items:center; gap:8px; }
+    .am-timer { font-size:.69rem; color:var(--text4); background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:4px; padding:2px 8px; }
+
+    /* ── Progress bar ── */
+    #refresh-bar { height:2px; background:var(--accent); transition:width 1s linear; position:fixed; top:0; left:0; z-index:9999; }
+
+    /* ── Stat cards ── */
+    .stat-card { background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:var(--radius); padding:1rem 1.125rem; transition:border-color .15s; }
+    .stat-card:hover { border-color:rgba(255,255,255,0.13); }
+    .stat-num { font-size:1.625rem; font-weight:500; line-height:1; color:var(--text1); letter-spacing:-.03em; }
+    .stat-label { font-size:.6875rem; color:var(--text3); margin-top:4px; text-transform:uppercase; letter-spacing:.06em; font-weight:500; }
+
+    /* ── Cards ── */
+    .card { background:var(--surface) !important; border:1px solid var(--border) !important; border-radius:var(--radius) !important; }
+    .card-header { background:rgba(255,255,255,0.02) !important; border-bottom:1px solid var(--border) !important; color:var(--text2) !important; font-size:.8125rem; font-weight:500; padding:.625rem .875rem; }
+
+    /* ── Tables ── */
+    .table { color:var(--text2); font-size:.79rem; }
+    .table thead th { background:rgba(255,255,255,0.02); border-color:var(--border) !important; color:var(--text3); font-size:.675rem; text-transform:uppercase; letter-spacing:.06em; font-weight:500; padding:.5rem .75rem; white-space:nowrap; }
+    .table td, .table th { border-color:var(--border-sub) !important; vertical-align:middle; padding:.5rem .75rem; }
+    .table-hover tbody tr:hover { background:rgba(255,255,255,0.025) !important; }
+    .table tbody tr:last-child td { border-bottom:none !important; }
+
+    /* ── Tabs ── */
+    .tab-custom .nav-link { color:var(--text3); border:none; border-bottom:2px solid transparent; border-radius:0; padding:.625rem .75rem; font-size:.79rem; font-weight:500; transition:color .15s; }
+    .tab-custom .nav-link:hover { color:var(--text2); background:transparent; }
+    .tab-custom .nav-link.active { color:var(--text1); border-bottom-color:var(--accent); background:transparent; }
+    .tab-custom.border-bottom { border-color:var(--border) !important; }
+    .sub-tab-custom .nav-link { color:var(--text3); border:none; border-bottom:2px solid transparent; border-radius:0; padding:.45rem .625rem; font-size:.77rem; font-weight:500; }
+    .sub-tab-custom .nav-link:hover { color:var(--text2); background:transparent; }
+    .sub-tab-custom .nav-link.active { color:var(--text1); border-bottom-color:var(--accent); background:transparent; }
+
+    /* ── Severity badges ── */
+    .badge-CRITICAL { background:rgba(218,54,51,.18) !important; color:#ff7070 !important; border:1px solid rgba(218,54,51,.3) !important; border-radius:3px; }
+    .badge-HIGH     { background:rgba(226,167,51,.15) !important; color:#e2a733 !important; border:1px solid rgba(226,167,51,.28) !important; border-radius:3px; }
+    .badge-MEDIUM   { background:rgba(227,179,65,.12) !important; color:var(--amber) !important; border:1px solid rgba(227,179,65,.24) !important; border-radius:3px; }
+    .badge-LOW      { background:rgba(56,139,253,.12) !important; color:#5eadff !important; border:1px solid rgba(56,139,253,.24) !important; border-radius:3px; }
+    .badge-INFO     { background:rgba(255,255,255,.06) !important; color:var(--text3) !important; border:1px solid var(--border) !important; border-radius:3px; }
+
+    /* ── Status dots ── */
+    .dot-alive, .dot-up   { width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 5px rgba(39,166,68,.5); }
+    .dot-dead,  .dot-down { width:7px;height:7px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px; }
+    .dot-unknown          { width:7px;height:7px;border-radius:50%;background:var(--text4);display:inline-block;margin-right:6px; }
+
+    /* ── Port badges ── */
+    .port-badge { display:inline-block;padding:1px 7px;border-radius:var(--radius-sm);font-size:.67rem;font-family:var(--mono);margin:1px; }
+    .port-web   { background:rgba(113,112,255,.1);color:#9d9cff;border:1px solid rgba(113,112,255,.2); }
+    .port-db    { background:rgba(227,179,65,.1);color:var(--amber);border:1px solid rgba(227,179,65,.2); }
+    .port-ssh   { background:rgba(39,166,68,.1);color:#4dc87c;border:1px solid rgba(39,166,68,.2); }
+    .port-risky { background:rgba(218,54,51,.12);color:#ff7070;border:1px solid rgba(218,54,51,.25); }
+    .port-other { background:rgba(255,255,255,.04);color:var(--text3);border:1px solid var(--border); }
+    .port-new   { animation:pulse-port 1.5s ease-in-out 3; }
+    @keyframes pulse-port { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 8px var(--red);} }
+
+    /* ── Security headers ── */
+    .sec-present { color:var(--green); font-size:.8rem; }
+    .sec-missing  { color:var(--red);   font-size:.8rem; }
+
+    /* ── Misc ── */
+    .section-title { font-size:.71rem;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);font-weight:600; }
+    .text-muted { color:var(--text3) !important; }
+    .alert-critical { background:rgba(218,54,51,.08);border:1px solid rgba(218,54,51,.25);border-radius:var(--radius);padding:.75rem 1rem; }
+    .new-badge      { font-size:.63rem;background:rgba(39,166,68,.1);color:#4dc87c;border:1px solid rgba(39,166,68,.2);padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
+    .takeover-badge { font-size:.63rem;background:rgba(218,54,51,.1);color:#ff7070;border:1px solid rgba(218,54,51,.25);padding:1px 5px;border-radius:3px;vertical-align:middle;margin-left:4px; }
+    .domain-stat { font-size:.78rem;color:var(--text3); }
+    .section-sep { border-color:var(--border);margin:1rem 0; }
+    .scan-spinner { width:13px;height:13px; }
+    .technique-toggle label { font-size:.78rem;color:var(--text2);cursor:pointer; }
+
+    /* ── Buttons ── */
+    .btn-primary   { background:var(--brand);border-color:var(--brand);color:#fff;font-size:.78rem;font-weight:500; }
+    .btn-primary:hover { background:var(--accent);border-color:var(--accent);color:#fff; }
+    .btn-outline-primary  { color:var(--accent);border-color:rgba(113,112,255,.3);font-size:.78rem; }
+    .btn-outline-primary:hover  { background:rgba(113,112,255,.1);color:var(--accent-h);border-color:rgba(113,112,255,.5); }
+    .btn-outline-secondary { color:var(--text3);border-color:var(--border);font-size:.78rem; }
+    .btn-outline-secondary:hover { background:rgba(255,255,255,.06);color:var(--text2);border-color:rgba(255,255,255,.15); }
+    .btn-outline-danger { color:#ff7070;border-color:rgba(218,54,51,.3);font-size:.78rem; }
+    .btn-outline-danger:hover { background:rgba(218,54,51,.1);color:#ff7070;border-color:rgba(218,54,51,.5); }
+    .btn-secondary { background:rgba(255,255,255,.06);border-color:var(--border);color:var(--text2);font-size:.78rem; }
+    .btn-secondary:hover { background:rgba(255,255,255,.1);color:var(--text1); }
+    .btn-success { background:rgba(39,166,68,.15);border-color:rgba(39,166,68,.3);color:#4dc87c;font-size:.78rem; }
+    .btn-sm { padding:3px 10px;font-size:.75rem; }
+    .btn-xs { padding:1px 7px;font-size:.69rem; }
+
+    /* ── Form controls ── */
+    .form-control, .form-select { background:var(--panel);border-color:var(--border);color:var(--text2);font-size:.79rem; }
+    .form-control:focus, .form-select:focus { background:var(--panel);border-color:rgba(113,112,255,.5);color:var(--text1);box-shadow:0 0 0 2px rgba(113,112,255,.12); }
+    .form-control::placeholder { color:var(--text4); }
+    .form-control-sm, .form-select-sm { font-size:.77rem; }
+    .form-label { font-size:.71rem;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:500;margin-bottom:.35rem; }
+    .form-text  { color:var(--text4);font-size:.72rem; }
+    .form-check-input { background-color:rgba(255,255,255,.06);border-color:var(--border); }
+    .form-check-input:checked { background-color:var(--accent);border-color:var(--accent); }
+    .form-check-label { color:var(--text2); }
+    .form-switch .form-check-input { background-color:rgba(255,255,255,.1); }
+    .form-switch .form-check-input:checked { background-color:var(--accent); }
+
+    /* ── Modals ── */
+    .modal-content { background:var(--surface) !important;border:1px solid var(--border) !important;border-radius:var(--radius) !important;color:var(--text2) !important; }
+    .modal-header { border-bottom:1px solid var(--border) !important;padding:1rem 1.25rem; }
+    .modal-title  { font-size:.9rem;font-weight:600;color:var(--text1); }
+    .modal-body   { padding:1.25rem; }
+    .modal-footer { border-top:1px solid var(--border) !important;padding:.75rem 1.25rem; }
+    .modal-dark .modal-content { background:var(--surface) !important;border:1px solid var(--border) !important;color:var(--text2) !important; }
+    .modal-dark .modal-header { border-bottom:1px solid var(--border) !important; }
+    .modal-dark .modal-footer { border-top:1px solid var(--border) !important; }
+    .modal-dark .form-control, .modal-dark .form-select { background:var(--panel);border-color:var(--border);color:var(--text2); }
+    .modal-dark .form-control:focus, .modal-dark .form-select:focus { border-color:rgba(113,112,255,.5);box-shadow:0 0 0 2px rgba(113,112,255,.12); }
+    .modal-dark .form-text { color:var(--text4); }
+    .modal-dark .form-check-input { background-color:rgba(255,255,255,.06);border-color:var(--border); }
+    .btn-close { filter:invert(1) opacity(.5); }
+    .modal-dark .btn-close { filter:invert(1) opacity(.5); }
+
+    /* ── Settings nav-tabs ── */
+    .nav-tabs { border-color:var(--border) !important; }
+    .nav-tabs .nav-link { color:var(--text3);border:none;border-bottom:2px solid transparent;border-radius:0;font-size:.78rem;padding:.5rem .75rem; }
+    .nav-tabs .nav-link:hover { color:var(--text2);background:transparent;border-color:transparent; }
+    .nav-tabs .nav-link.active { color:var(--text1);background:transparent;border-color:transparent;border-bottom-color:var(--accent) !important; }
+
+    /* ── Toast ── */
     .toast-container { position:fixed;bottom:1.5rem;right:1.5rem;z-index:11000; }
-    .scan-spinner { width:14px;height:14px; }
-    .technique-toggle label { font-size:.8rem;color:#c9d1d9;cursor:pointer; }
-    .form-check-input:checked { background-color:#388bfd;border-color:#388bfd; }
-    .modal-dark .modal-content { background:#161b22;border:1px solid #30363d;color:#c9d1d9; }
-    .modal-dark .modal-header { border-bottom:1px solid #30363d; }
-    .modal-dark .modal-footer { border-top:1px solid #30363d; }
-    .modal-dark .btn-close { filter:invert(1); }
-    .modal-dark .form-control, .modal-dark .form-select { background:#0d1117;border-color:#30363d;color:#c9d1d9; }
-    .modal-dark .form-control:focus, .modal-dark .form-select:focus { background:#0d1117;border-color:#388bfd;color:#c9d1d9;box-shadow:none; }
-    .modal-dark .form-text { color:#8b949e; }
-    .modal-dark .form-check-input { background-color:#0d1117;border-color:#30363d; }
-    .section-sep { border-color:#30363d;margin:1rem 0; }
-    /* Profile badges */
-    .profile-passive    { background:#1a2a1a;color:#3fb950;border:1px solid #3fb95044;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-stealth    { background:#1a1a2a;color:#7c6aff;border:1px solid #7c6aff44;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-open       { background:#1a2a3a;color:#58a6ff;border:1px solid #388bfd44;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-aggressive { background:#3a1a1a;color:#f85149;border:1px solid #da363344;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-custom     { background:#2a2000;color:#e3b341;border:1px solid #d2992244;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-default    { background:#1c2128;color:#8b949e;border:1px solid #30363d;font-size:.65rem;padding:1px 6px;border-radius:3px; }
-    .profile-card { background:#1c2128;border:1px solid #30363d;border-radius:8px;padding:1rem;position:relative; }
-    .profile-card.builtin { border-left:3px solid #388bfd; }
-    .profile-card.custom  { border-left:3px solid #e3b341; }
-    /* Domain detail panel */
-    #domain-detail { position:fixed;top:0;left:0;right:0;bottom:0;background:#0d1117;z-index:8000;overflow-y:auto;display:none; }
+    .toast { background:var(--surface) !important;border:1px solid var(--border) !important;min-width:280px;border-radius:var(--radius) !important; }
+
+    /* ── Profile badges ── */
+    .profile-passive    { background:rgba(39,166,68,.1);color:#4dc87c;border:1px solid rgba(39,166,68,.2);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-stealth    { background:rgba(113,112,255,.1);color:#9d9cff;border:1px solid rgba(113,112,255,.2);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-open       { background:rgba(56,139,253,.1);color:#5eadff;border:1px solid rgba(56,139,253,.2);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-aggressive { background:rgba(218,54,51,.1);color:#ff7070;border:1px solid rgba(218,54,51,.25);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-custom     { background:rgba(227,179,65,.1);color:var(--amber);border:1px solid rgba(227,179,65,.2);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-default    { background:rgba(255,255,255,.04);color:var(--text3);border:1px solid var(--border);font-size:.63rem;padding:1px 6px;border-radius:3px; }
+    .profile-card { background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;position:relative;transition:border-color .15s; }
+    .profile-card:hover { border-color:rgba(255,255,255,.13); }
+    .profile-card.builtin { border-left:3px solid var(--accent); }
+    .profile-card.custom  { border-left:3px solid var(--amber); }
+
+    /* ── Domain detail panel ── */
+    #domain-detail { position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:8000;overflow-y:auto;display:none; }
     #domain-detail.visible { display:block; }
-    .detail-navbar { background:#161b22;border-bottom:1px solid #30363d;padding:.6rem 1rem;position:sticky;top:0;z-index:100; }
-    .sub-tab-custom .nav-link { color:#8b949e;border:none;border-bottom:2px solid transparent;border-radius:0;padding:.4rem .65rem;font-size:.8rem; }
-    .sub-tab-custom .nav-link.active { color:#58a6ff;border-bottom-color:#388bfd;background:transparent; }
-    /* Clickable change event row */
-    .event-deeplink { cursor:pointer;color:#58a6ff;font-size:.7rem;border:1px solid #388bfd44;background:#1d3461;padding:1px 5px;border-radius:3px;white-space:nowrap;margin-left:4px; }
-    .event-deeplink:hover { background:#388bfd;color:#fff; }
-    /* Highlight row */
-    .row-highlight { animation: highlight-row 2s ease-out; }
-    @keyframes highlight-row { 0%{background:#3d1f00;} 100%{background:transparent;} }
+    .detail-navbar { background:var(--panel);border-bottom:1px solid var(--border-sub);padding:.625rem 1rem;position:sticky;top:0;z-index:100; }
+
+    /* ── Event deeplink ── */
+    .event-deeplink { cursor:pointer;color:var(--accent);font-size:.68rem;border:1px solid rgba(113,112,255,.25);background:rgba(113,112,255,.08);padding:1px 5px;border-radius:3px;white-space:nowrap;margin-left:4px; }
+    .event-deeplink:hover { background:rgba(113,112,255,.2);color:var(--accent-h); }
+
+    /* ── Row highlight ── */
+    .row-highlight { animation:highlight-row 2s ease-out; }
+    @keyframes highlight-row { 0%{background:rgba(227,179,65,.08);} 100%{background:transparent;} }
+
+    /* ── Badges override ── */
+    .badge.bg-secondary { background:rgba(255,255,255,.08) !important;color:var(--text2) !important; }
+    .badge.bg-success   { background:rgba(39,166,68,.18) !important;color:#4dc87c !important; }
+    .badge.bg-info      { background:rgba(56,139,253,.15) !important;color:#5eadff !important; }
+    .badge.bg-danger    { background:rgba(218,54,51,.15) !important;color:#ff7070 !important; }
+    .badge.bg-warning   { background:rgba(227,179,65,.15) !important;color:var(--amber) !important; }
+    .badge.bg-primary   { background:rgba(113,112,255,.2) !important;color:#9d9cff !important; }
+
+    code { font-family:var(--mono); }
   </style>
 </head>
 <body>
 
 <!-- Progress bar -->
-<div id="refresh-bar" style="width:100%;position:fixed;top:0;left:0;z-index:9999;"></div>
+<div id="refresh-bar" style="width:0%;"></div>
 
 <!-- Navbar -->
-<nav class="navbar navbar-dark" style="background:#161b22;border-bottom:1px solid #30363d;padding-top:.6rem;padding-bottom:.6rem;margin-top:2px;">
-  <div class="container-fluid">
-    <span class="navbar-brand mb-0 h1" style="font-size:1rem;cursor:pointer;" onclick="closeDomainDetail()">
-      <i class="bi bi-shield-lock-fill" style="color:#388bfd;"></i>&nbsp; AssetMonitor
-    </span>
-    <div class="d-flex align-items-center gap-3">
-      <div id="scan-running-indicator" class="d-none align-items-center gap-2">
-        <div class="spinner-border scan-spinner text-primary" role="status"></div>
-        <span style="font-size:.75rem;color:#58a6ff;" id="scan-running-label">Scanning...</span>
-      </div>
-      <span class="text-muted" style="font-size:.75rem;" id="last-scan-label">Fetching...</span>
-      <span class="badge bg-secondary" id="refresh-timer" style="font-size:.7rem;">60s</span>
-      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;padding:2px 10px;" onclick="refreshAll(true)">
-        <i class="bi bi-arrow-clockwise"></i> Refresh
-      </button>
-      <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;padding:2px 10px;" onclick="openSettings()" title="Settings">
-        <i class="bi bi-gear"></i>
-      </button>
-      <span id="nav-username" class="text-muted" style="font-size:.72rem;"></span>
-      <a href="/logout" class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;padding:2px 10px;" title="Sign out">
-        <i class="bi bi-box-arrow-right"></i>
-      </a>
+<nav class="am-nav">
+  <button class="am-nav-brand" onclick="closeDomainDetail()">
+    <i class="bi bi-shield-lock-fill"></i> AssetMonitor
+  </button>
+  <div class="am-nav-right">
+    <div id="scan-running-indicator" class="d-none align-items-center gap-2">
+      <div class="spinner-border scan-spinner" style="color:var(--accent);" role="status"></div>
+      <span style="font-size:.75rem;color:var(--accent);" id="scan-running-label">Scanning...</span>
     </div>
+    <span style="font-size:.72rem;color:var(--text3);" id="last-scan-label">Fetching...</span>
+    <span class="am-timer" id="refresh-timer">60s</span>
+    <button class="btn btn-sm btn-outline-primary" style="padding:3px 10px;" onclick="refreshAll(true)">
+      <i class="bi bi-arrow-clockwise"></i> Refresh
+    </button>
+    <button class="btn btn-sm btn-outline-secondary" style="padding:3px 8px;" onclick="openSettings()" title="Settings">
+      <i class="bi bi-gear"></i>
+    </button>
+    <span id="nav-username" style="font-size:.69rem;color:var(--text4);"></span>
+    <a href="/logout" class="btn btn-sm btn-outline-secondary" style="padding:3px 8px;" title="Sign out">
+      <i class="bi bi-box-arrow-right"></i>
+    </a>
   </div>
 </nav>
 
@@ -128,7 +233,7 @@
       <i class="bi bi-arrow-left"></i> Back
     </button>
     <div class="flex-grow-1">
-      <span id="dd-domain-name" style="font-size:.95rem;font-weight:600;color:#c9d1d9;"></span>
+      <span id="dd-domain-name" style="font-size:.95rem;font-weight:600;color:var(--text1);"></span>
       <span id="dd-profile-badge" class="ms-2"></span>
     </div>
     <div class="d-flex gap-2">
@@ -151,7 +256,7 @@
     </div>
 
     <!-- Detail sub-tabs -->
-    <ul class="nav sub-tab-custom border-bottom mb-3" style="border-color:#30363d !important;">
+    <ul class="nav sub-tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
       <li class="nav-item"><a class="nav-link active" data-dtab="dd-subs" href="#" onclick="showDetailTab('dd-subs',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="dd-tab-badge-subs">0</span></a></li>
       <li class="nav-item"><a class="nav-link" data-dtab="dd-ports" href="#" onclick="showDetailTab('dd-ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="dd-tab-badge-ports">0</span></a></li>
       <li class="nav-item"><a class="nav-link" data-dtab="dd-changes" href="#" onclick="showDetailTab('dd-changes',this);return false;"><i class="bi bi-activity"></i> Changes (7d) <span class="badge bg-secondary ms-1" id="dd-tab-badge-changes">0</span></a></li>
@@ -163,10 +268,10 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <span><i class="bi bi-globe"></i> Subdomains</span>
           <div class="d-flex gap-2">
-            <select class="form-select form-select-sm" style="width:120px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="dd-filter-sub-status" onchange="renderDetailSubs()">
+            <select class="form-select form-select-sm" style="width:120px;font-size:.75rem;" id="dd-filter-sub-status" onchange="renderDetailSubs()">
               <option value="">All status</option><option value="alive">Alive</option><option value="dead">Dead</option>
             </select>
-            <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter FQDN..." id="dd-filter-sub-text" oninput="renderDetailSubs()">
+            <input type="text" class="form-control form-control-sm" style="width:200px;font-size:.75rem;" placeholder="Filter FQDN..." id="dd-filter-sub-text" oninput="renderDetailSubs()">
           </div>
         </div>
         <div class="card-body p-0">
@@ -200,7 +305,7 @@
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span><i class="bi bi-activity"></i> Recent Changes (last 7 days)</span>
-          <select class="form-select form-select-sm" style="width:130px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="dd-filter-sev" onchange="renderDetailChanges()">
+          <select class="form-select form-select-sm" style="width:130px;font-size:.75rem;" id="dd-filter-sev" onchange="renderDetailChanges()">
             <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
           </select>
         </div>
@@ -230,14 +335,14 @@
     <div class="col"><div class="stat-card"><div class="stat-num text-info" id="s-ports">–</div><div class="stat-label">Open Ports</div></div></div>
     <div class="col"><div class="stat-card"><div class="stat-num" id="s-events">–</div><div class="stat-label">Events (24h)</div></div></div>
     <div class="col"><div class="stat-card"><div class="stat-num text-danger" id="s-critical">–</div><div class="stat-label">Critical (24h)</div></div></div>
-    <div class="col"><div class="stat-card"><div class="stat-num" style="color:#d29922;" id="s-high">–</div><div class="stat-label">High (24h)</div></div></div>
+    <div class="col"><div class="stat-card"><div class="stat-num" style="color:var(--amber);" id="s-high">–</div><div class="stat-label">High (24h)</div></div></div>
   </div>
 
   <!-- Critical alert banner -->
   <div id="critical-banner" class="d-none mb-3"></div>
 
   <!-- Tabs -->
-  <ul class="nav tab-custom border-bottom mb-3" style="border-color:#30363d !important;">
+  <ul class="nav tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
     <li class="nav-item"><a class="nav-link active" data-tab="targets" href="#" onclick="showTab('targets',this);return false;"><i class="bi bi-crosshair"></i> Targets <span class="badge bg-secondary ms-1" id="tab-badge-targets">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="profiles" href="#" onclick="showTab('profiles',this);return false;"><i class="bi bi-sliders2"></i> Profiles <span class="badge bg-secondary ms-1" id="tab-badge-profiles">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
@@ -284,7 +389,7 @@
   <!-- Tab: Profiles -->
   <div id="tab-profiles" class="d-none">
     <div class="d-flex justify-content-between align-items-center mb-3">
-      <span style="font-size:.8rem;color:#8b949e;">Scan profiles control enumeration techniques, port scan behaviour, and crawl depth. Assign a profile to any domain.</span>
+      <span style="font-size:.8rem;color:var(--text3);">Scan profiles control enumeration techniques, port scan behaviour, and crawl depth. Assign a profile to any domain.</span>
       <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="openCreateProfileModal()">
         <i class="bi bi-plus-lg"></i> New Profile
       </button>
@@ -299,7 +404,7 @@
     <div class="card">
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-ethernet"></i> Port Scan Results — Latest per Host</span>
-        <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter host..." id="filter-ports" oninput="renderPorts()">
+        <input type="text" class="form-control form-control-sm" style="width:200px;font-size:.75rem;" placeholder="Filter host..." id="filter-ports" oninput="renderPorts()">
       </div>
       <div class="card-body p-0">
         <div class="table-responsive">
@@ -320,13 +425,13 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-globe"></i> Subdomain Status</span>
         <div class="d-flex gap-2">
-          <select class="form-select form-select-sm" style="width:120px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-sub-status" onchange="renderSubdomains()">
+          <select class="form-select form-select-sm" style="width:120px;font-size:.75rem;" id="filter-sub-status" onchange="renderSubdomains()">
             <option value="">All status</option>
             <option value="alive">Alive</option>
             <option value="dead">Dead</option>
             <option value="unknown">Unknown</option>
           </select>
-          <input type="text" class="form-control form-control-sm" style="width:200px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter FQDN..." id="filter-subs-text">
+          <input type="text" class="form-control form-control-sm" style="width:200px;font-size:.75rem;" placeholder="Filter FQDN..." id="filter-subs-text">
         </div>
       </div>
       <div class="card-body p-0">
@@ -376,7 +481,7 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <span><i class="bi bi-activity"></i> Change Events</span>
         <div class="d-flex gap-2 align-items-center">
-          <select class="form-select form-select-sm" style="width:130px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-sev" onchange="renderChanges()">
+          <select class="form-select form-select-sm" style="width:130px;font-size:.75rem;" id="filter-sev" onchange="renderChanges()">
             <option value="">All severities</option>
             <option value="CRITICAL">Critical</option>
             <option value="HIGH">High</option>
@@ -384,13 +489,13 @@
             <option value="LOW">Low</option>
             <option value="INFO">Info</option>
           </select>
-          <select class="form-select form-select-sm" style="width:110px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" id="filter-hours" onchange="reloadChanges()">
+          <select class="form-select form-select-sm" style="width:110px;font-size:.75rem;" id="filter-hours" onchange="reloadChanges()">
             <option value="24">Last 24h</option>
             <option value="48" selected>Last 48h</option>
             <option value="168">Last 7d</option>
             <option value="720">Last 30d</option>
           </select>
-          <input type="text" class="form-control form-control-sm" style="width:180px;background:#0d1117;border-color:#30363d;color:#c9d1d9;font-size:.75rem;" placeholder="Filter target..." id="filter-target">
+          <input type="text" class="form-control form-control-sm" style="width:180px;font-size:.75rem;" placeholder="Filter target..." id="filter-target">
         </div>
       </div>
       <div class="card-body p-0">
@@ -404,7 +509,7 @@
         </div>
       </div>
     </div>
-    <p class="text-muted mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle"></i> Click the <span style="color:#58a6ff;">→</span> link on any event to jump to the relevant page.</p>
+    <p class="text-muted mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle"></i> Click the <span style="color:var(--accent);">→</span> link on any event to jump to the relevant page.</p>
   </div>
 
 </div><!-- /main-dashboard -->
@@ -426,7 +531,7 @@
       </div>
       <div class="modal-body">
         <div class="mb-3">
-          <label class="form-label" style="font-size:.8rem;color:#8b949e;">TARGET TYPE</label>
+          <label class="form-label">TARGET TYPE</label>
           <select class="form-select" id="at-type" onchange="onTargetTypeChange()">
             <option value="domain">Root Domain — enumerate + monitor all subdomains</option>
             <option value="subdomain">Known Subdomain — add directly to monitoring</option>
@@ -434,14 +539,14 @@
           </select>
         </div>
         <div class="mb-3">
-          <label class="form-label" style="font-size:.8rem;color:#8b949e;" id="at-value-label">DOMAIN</label>
+          <label class="form-label" id="at-value-label">DOMAIN</label>
           <input type="text" class="form-control" id="at-value" placeholder="example.com" autocomplete="off">
           <div class="form-text" id="at-value-hint">Enter the root domain to monitor (e.g. example.com)</div>
         </div>
 
         <!-- Profile selector — shown for domain type -->
         <div id="at-profile-section" class="mb-3">
-          <label class="form-label" style="font-size:.8rem;color:#8b949e;">SCAN PROFILE</label>
+          <label class="form-label">SCAN PROFILE</label>
           <select class="form-select" id="at-profile-id">
             <option value="">Default (global config)</option>
           </select>
@@ -451,7 +556,7 @@
         <!-- Enumeration technique overrides (domain/subdomain only) -->
         <div id="at-enum-section">
           <hr class="section-sep">
-          <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Enumeration Technique Overrides <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#484f58;">(override profile for this scan only)</span></div>
+          <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Enumeration Technique Overrides <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text4);">(override profile for this scan only)</span></div>
           <div class="row g-2">
             <div class="col-6 col-md-4 technique-toggle">
               <div class="form-check"><input class="form-check-input" type="checkbox" id="t-ct" checked><label class="form-check-label" for="t-ct"><i class="bi bi-patch-check text-info" style="font-size:.75rem;"></i> Certificate Transparency</label></div>
@@ -463,7 +568,7 @@
               <div class="form-check"><input class="form-check-input" type="checkbox" id="t-passive" checked><label class="form-check-label" for="t-passive"><i class="bi bi-database text-primary" style="font-size:.75rem;"></i> Passive DNS</label></div>
             </div>
             <div class="col-6 col-md-4 technique-toggle">
-              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-wayback" checked><label class="form-check-label" for="t-wayback"><i class="bi bi-clock-history" style="font-size:.75rem;color:#8b949e;"></i> Wayback Machine</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-wayback" checked><label class="form-check-label" for="t-wayback"><i class="bi bi-clock-history" style="font-size:.75rem;color:var(--text3);"></i> Wayback Machine</label></div>
             </div>
             <div class="col-6 col-md-4 technique-toggle">
               <div class="form-check"><input class="form-check-input" type="checkbox" id="t-ssl" checked><label class="form-check-label" for="t-ssl"><i class="bi bi-shield-lock text-success" style="font-size:.75rem;"></i> SSL SAN Extraction</label></div>
@@ -472,13 +577,13 @@
               <div class="form-check"><input class="form-check-input" type="checkbox" id="t-js" checked><label class="form-check-label" for="t-js"><i class="bi bi-filetype-js text-warning" style="font-size:.75rem;"></i> JS File Analysis</label></div>
             </div>
             <div class="col-6 col-md-4 technique-toggle">
-              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-axfr"><label class="form-check-label" for="t-axfr"><i class="bi bi-arrow-repeat" style="font-size:.75rem;color:#8b949e;"></i> Zone Transfer (AXFR)</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-axfr"><label class="form-check-label" for="t-axfr"><i class="bi bi-arrow-repeat" style="font-size:.75rem;color:var(--text3);"></i> Zone Transfer (AXFR)</label></div>
             </div>
             <div class="col-6 col-md-4 technique-toggle">
-              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-revip"><label class="form-check-label" for="t-revip"><i class="bi bi-diagram-3" style="font-size:.75rem;color:#8b949e;"></i> Reverse IP Lookup</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-revip"><label class="form-check-label" for="t-revip"><i class="bi bi-diagram-3" style="font-size:.75rem;color:var(--text3);"></i> Reverse IP Lookup</label></div>
             </div>
             <div class="col-6 col-md-4 technique-toggle">
-              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-dnsrec" checked><label class="form-check-label" for="t-dnsrec"><i class="bi bi-list-nested" style="font-size:.75rem;color:#8b949e;"></i> DNS Records</label></div>
+              <div class="form-check"><input class="form-check-input" type="checkbox" id="t-dnsrec" checked><label class="form-check-label" for="t-dnsrec"><i class="bi bi-list-nested" style="font-size:.75rem;color:var(--text3);"></i> DNS Records</label></div>
             </div>
           </div>
           <div class="form-text mt-2">Overrides apply to this scan only. Persistent technique selection is controlled by the assigned profile.</div>
@@ -487,35 +592,35 @@
         <!-- Website scanning techniques (website type only) -->
         <div id="at-website-section" style="display:none;">
           <hr class="section-sep">
-          <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Scanning Techniques</div>
+          <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Scanning Techniques</div>
           <div class="row g-2">
             <div class="col-6 col-md-3 technique-toggle">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="wt-crawl" checked>
                 <label class="form-check-label" for="wt-crawl"><i class="bi bi-diagram-2 text-info" style="font-size:.75rem;"></i> BFS Crawl</label>
               </div>
-              <div style="font-size:.7rem;color:#484f58;padding-left:1.5rem;">Discovers pages &amp; endpoints</div>
+              <div style="font-size:.7rem;color:var(--text4);padding-left:1.5rem;">Discovers pages &amp; endpoints</div>
             </div>
             <div class="col-6 col-md-3 technique-toggle">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="wt-js" checked>
                 <label class="form-check-label" for="wt-js"><i class="bi bi-filetype-js text-warning" style="font-size:.75rem;"></i> JS Analysis</label>
               </div>
-              <div style="font-size:.7rem;color:#484f58;padding-left:1.5rem;">Extracts API routes from JS</div>
+              <div style="font-size:.7rem;color:var(--text4);padding-left:1.5rem;">Extracts API routes from JS</div>
             </div>
             <div class="col-6 col-md-3 technique-toggle">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="wt-secfiles" checked>
                 <label class="form-check-label" for="wt-secfiles"><i class="bi bi-file-earmark-lock text-danger" style="font-size:.75rem;"></i> Security Files</label>
               </div>
-              <div style="font-size:.7rem;color:#484f58;padding-left:1.5rem;">Checks .env, .git, swagger…</div>
+              <div style="font-size:.7rem;color:var(--text4);padding-left:1.5rem;">Checks .env, .git, swagger…</div>
             </div>
             <div class="col-6 col-md-3 technique-toggle">
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="wt-screenshot">
                 <label class="form-check-label" for="wt-screenshot"><i class="bi bi-camera text-success" style="font-size:.75rem;"></i> Screenshot</label>
               </div>
-              <div style="font-size:.7rem;color:#484f58;padding-left:1.5rem;">Requires Playwright</div>
+              <div style="font-size:.7rem;color:var(--text4);padding-left:1.5rem;">Requires Playwright</div>
             </div>
           </div>
           <div class="form-text mt-2">Selected techniques run on every scan of this website and are saved permanently.</div>
@@ -572,11 +677,11 @@
       <div class="modal-body">
         <div class="row g-3">
           <div class="col-md-6">
-            <label class="form-label" style="font-size:.8rem;color:#8b949e;">PROFILE NAME</label>
+            <label class="form-label">PROFILE NAME</label>
             <input type="text" class="form-control" id="pm-name" placeholder="e.g. Bug Bounty Passive">
           </div>
           <div class="col-md-6">
-            <label class="form-label" style="font-size:.8rem;color:#8b949e;">SCAN MODE</label>
+            <label class="form-label">SCAN MODE</label>
             <select class="form-select" id="pm-mode">
               <option value="passive">Passive — no active probing</option>
               <option value="stealth">Stealth — low-and-slow, minimal noise</option>
@@ -585,42 +690,42 @@
             </select>
           </div>
           <div class="col-12">
-            <label class="form-label" style="font-size:.8rem;color:#8b949e;">DESCRIPTION</label>
+            <label class="form-label">DESCRIPTION</label>
             <input type="text" class="form-control" id="pm-desc" placeholder="Brief description of when to use this profile">
           </div>
         </div>
         <hr class="section-sep">
         <div class="row g-3">
           <div class="col-md-6">
-            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Enumeration Techniques</div>
+            <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Enumeration Techniques</div>
             <div id="pm-techniques" class="row g-2">
               <!-- populated by JS -->
             </div>
           </div>
           <div class="col-md-6">
-            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Port Scanning</div>
+            <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Port Scanning</div>
             <div class="form-check form-switch mb-2">
               <input class="form-check-input" type="checkbox" id="pm-ports-enabled" checked>
               <label class="form-check-label" for="pm-ports-enabled" style="font-size:.85rem;">Enable port scanning</label>
             </div>
             <div id="pm-port-args-group">
-              <label class="form-label" style="font-size:.8rem;color:#8b949e;">NMAP ARGUMENTS</label>
+              <label class="form-label">NMAP ARGUMENTS</label>
               <input type="text" class="form-control form-control-sm" id="pm-port-args" value="-sT -T4 -sV --version-intensity 2 --open" placeholder="-sT -T4 -sV --open">
               <div class="form-text">Common: -sT -T4 (standard), -sT -T2 (stealth), -sT -T5 -sC (aggressive)</div>
             </div>
             <hr class="section-sep">
-            <div class="mb-2" style="font-size:.8rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;">Web Crawl</div>
+            <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Web Crawl</div>
             <div class="form-check form-switch mb-2">
               <input class="form-check-input" type="checkbox" id="pm-crawl-enabled" checked>
               <label class="form-check-label" for="pm-crawl-enabled" style="font-size:.85rem;">Enable web crawling</label>
             </div>
             <div id="pm-crawl-settings-group" class="row g-2">
               <div class="col-6">
-                <label class="form-label" style="font-size:.8rem;color:#8b949e;">MAX DEPTH</label>
+                <label class="form-label">MAX DEPTH</label>
                 <input type="number" class="form-control form-control-sm" id="pm-crawl-depth" value="3" min="0" max="10">
               </div>
               <div class="col-6">
-                <label class="form-label" style="font-size:.8rem;color:#8b949e;">MAX PAGES</label>
+                <label class="form-label">MAX PAGES</label>
                 <input type="number" class="form-control form-control-sm" id="pm-crawl-pages" value="500" min="0">
               </div>
             </div>
@@ -649,7 +754,7 @@
       </div>
       <div class="modal-body p-0">
         <!-- Settings tabs -->
-        <ul class="nav nav-tabs px-3 pt-2" id="settings-tabs" style="border-bottom:1px solid #30363d;">
+        <ul class="nav nav-tabs px-3 pt-2" id="settings-tabs" style="border-bottom:1px solid var(--border);">
           <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#st-scan"><i class="bi bi-clock me-1"></i>Scan</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#st-notify"><i class="bi bi-bell me-1"></i>Notifications</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#st-apikeys"><i class="bi bi-key me-1"></i>API Keys</a></li>
@@ -661,19 +766,19 @@
           <div class="tab-pane fade show active" id="st-scan">
             <div class="row g-3">
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">SCAN INTERVAL (minutes)</label>
+                <label class="form-label">SCAN INTERVAL (minutes)</label>
                 <input type="number" class="form-control form-control-sm" id="cfg-interval" min="1" max="10080" placeholder="360">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">REQUEST TIMEOUT (seconds)</label>
+                <label class="form-label">REQUEST TIMEOUT (seconds)</label>
                 <input type="number" class="form-control form-control-sm" id="cfg-timeout" min="1" max="120" placeholder="10">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">MAX CRAWL DEPTH</label>
+                <label class="form-label">MAX CRAWL DEPTH</label>
                 <input type="number" class="form-control form-control-sm" id="cfg-crawl-depth" min="0" max="10" placeholder="3">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">MAX PAGES PER DOMAIN</label>
+                <label class="form-label">MAX PAGES PER DOMAIN</label>
                 <input type="number" class="form-control form-control-sm" id="cfg-crawl-pages" min="0" max="10000" placeholder="500">
               </div>
             </div>
@@ -682,7 +787,7 @@
           <!-- ── Notifications ── -->
           <div class="tab-pane fade" id="st-notify">
             <div class="mb-3">
-              <label class="form-label" style="font-size:.78rem;color:#8b949e;">MINIMUM ALERT SEVERITY</label>
+              <label class="form-label">MINIMUM ALERT SEVERITY</label>
               <select class="form-select form-select-sm" id="cfg-min-severity">
                 <option value="CRITICAL">CRITICAL</option>
                 <option value="HIGH">HIGH</option>
@@ -727,7 +832,7 @@
             </div>
             <div class="mb-3">
               <div class="d-flex align-items-center mb-2">
-                <i class="bi bi-envelope me-2" style="color:#8b949e;"></i>
+                <i class="bi bi-envelope me-2" style="color:var(--text3);"></i>
                 <strong style="font-size:.85rem;">Email</strong>
                 <div class="form-check form-switch ms-auto mb-0">
                   <input class="form-check-input" type="checkbox" id="cfg-email-enabled">
@@ -744,7 +849,7 @@
             </div>
             <div class="mb-2">
               <div class="d-flex align-items-center mb-2">
-                <i class="bi bi-send me-2" style="color:#8b949e;"></i>
+                <i class="bi bi-send me-2" style="color:var(--text3);"></i>
                 <strong style="font-size:.85rem;">Webhook</strong>
                 <div class="form-check form-switch ms-auto mb-0">
                   <input class="form-check-input" type="checkbox" id="cfg-webhook-enabled">
@@ -756,26 +861,26 @@
 
           <!-- ── API Keys ── -->
           <div class="tab-pane fade" id="st-apikeys">
-            <p class="text-muted mb-3" style="font-size:.8rem;">These keys are stored in the local database and used during passive DNS enumeration.</p>
+            <p class="text-muted mb-3" style="font-size:.8rem;color:var(--text3);">These keys are stored in the local database and used during passive DNS enumeration.</p>
             <div class="row g-3">
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">VIRUSTOTAL</label>
+                <label class="form-label">VIRUSTOTAL</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-vt-key" placeholder="API key (leave blank to keep current)">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">SECURITYTRAILS</label>
+                <label class="form-label">SECURITYTRAILS</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-st-key" placeholder="API key">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">SHODAN</label>
+                <label class="form-label">SHODAN</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-shodan-key" placeholder="API key">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">CENSYS API ID</label>
+                <label class="form-label">CENSYS API ID</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-censys-id" placeholder="API ID">
               </div>
               <div class="col-sm-6">
-                <label class="form-label" style="font-size:.78rem;color:#8b949e;">CENSYS SECRET</label>
+                <label class="form-label">CENSYS SECRET</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-censys-secret" placeholder="API secret">
               </div>
             </div>
@@ -962,7 +1067,7 @@ async function loadSummary() {
     }
     const banner = document.getElementById('critical-banner');
     if ((d.critical_24h || 0) > 0) {
-      banner.innerHTML = `<div class="alert-critical"><i class="bi bi-exclamation-triangle-fill text-danger"></i>&nbsp; <strong>${d.critical_24h} CRITICAL event${d.critical_24h>1?'s':''}</strong> in the last 24 hours — <a href="#" onclick="showTabByName('changes');return false;" style="color:#f85149;">check Change Events</a>.</div>`;
+      banner.innerHTML = `<div class="alert-critical"><i class="bi bi-exclamation-triangle-fill text-danger"></i>&nbsp; <strong>${d.critical_24h} CRITICAL event${d.critical_24h>1?'s':''}</strong> in the last 24 hours — <a href="#" onclick="showTabByName('changes');return false;" style="color:var(--red);">check Change Events</a>.</div>`;
       banner.classList.remove('d-none');
     } else {
       banner.classList.add('d-none');
@@ -999,7 +1104,7 @@ function renderPorts(highlightHost, highlightPort) {
     const notes = h.error ? `<span class="text-danger" title="${esc(h.error)}"><i class="bi bi-exclamation-circle"></i> error</span>` : '';
     const rowCls = highlightHost === h.host ? 'row-highlight' : '';
     return `<tr class="${rowCls}">
-      <td><code style="color:#58a6ff;">${esc(h.host)}</code></td>
+      <td><code style="color:var(--accent);">${esc(h.host)}</code></td>
       <td>${statusDot(h.status)}</td>
       <td>${portBadges || '<span class="text-muted">none open</span>'}</td>
       <td class="text-muted">${dur}</td>
@@ -1069,11 +1174,11 @@ function buildSubRow(s, now) {
     const label = ver ? `${name} <span style="opacity:.7;font-size:.6rem;">${esc(ver)}</span>` : esc(name);
     return `<span class="badge bg-secondary me-1" style="font-size:.65rem;" title="${esc(name)}${ver?' '+esc(ver):''}">${label}</span>`;
   }).join('');
-  const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join('<br>');
+  const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:var(--text3);">${esc(ip)}</code>`).join('<br>');
   const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
   const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
   return `<tr>
-    <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}${takeoverTag}</td>
+    <td><code style="color:var(--accent);font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}${takeoverTag}</td>
     <td>${statusDot(s.status)}</td>
     <td>${httpCode}</td>
     <td>${ips || '<span class="text-muted">—</span>'}</td>
@@ -1106,7 +1211,7 @@ function renderHeaders() {
     const code = h.status_code;
     const codeEl = code ? `<span class="badge ${code < 300 ? 'bg-success' : code < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${code}</span>` : '—';
     return `<tr>
-      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(h.fqdn)}</code></td>
+      <td><code style="color:var(--accent);font-size:.8rem;">${esc(h.fqdn)}</code></td>
       <td>${codeEl}</td>
       <td>${secHeader(sh['strict-transport-security'])}</td>
       <td>${secHeader(sh['content-security-policy'])}</td>
@@ -1173,8 +1278,8 @@ function renderChanges() {
     const link = eventDeepLink(e);
     return `<tr>
       <td>${sevBadge(e.severity)}</td>
-      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code>${link}</td>
-      <td><code style="font-size:.75rem;color:#58a6ff;">${esc(e.target)}</code></td>
+      <td><code style="font-size:.75rem;color:var(--text2);">${esc(e.event_type)}</code>${link}</td>
+      <td><code style="font-size:.75rem;color:var(--accent);">${esc(e.target)}</code></td>
       <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.description)}">${esc(e.description)}</td>
       <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
       <td class="text-center">${alerted}</td>
@@ -1202,12 +1307,12 @@ function renderProfiles() {
   const builtins = _profilesData.filter(p => p.is_builtin);
   const customs  = _profilesData.filter(p => !p.is_builtin);
 
-  const modeColors = {passive:'#3fb950',stealth:'#7c6aff',open:'#58a6ff',aggressive:'#f85149'};
+  const modeColors = {passive:'var(--green)',stealth:'var(--accent)',open:'var(--accent)',aggressive:'var(--red)'};
   const modeIcons  = {passive:'bi-eye-slash',stealth:'bi-incognito',open:'bi-globe',aggressive:'bi-lightning-charge'};
 
   function profileCard(p) {
     const mode   = (p.settings || {}).scan_mode || 'open';
-    const color  = modeColors[mode] || '#8b949e';
+    const color  = modeColors[mode] || 'var(--text3)';
     const icon   = modeIcons[mode]  || 'bi-sliders2';
     const s      = p.settings || {};
     const eTechs = s.enumeration || {};
@@ -1229,9 +1334,9 @@ function renderProfiles() {
       </div>
       <p class="text-muted mb-2" style="font-size:.78rem;">${esc(p.description || '')}</p>
       <div class="row g-2" style="font-size:.72rem;">
-        <div class="col-auto"><span class="text-muted">Enumeration:</span> <span style="color:#c9d1d9;">${esc(techOn)}</span></div>
-        <div class="col-auto"><span class="text-muted">Port scan:</span> <span style="color:${portEn?'#3fb950':'#8b949e'};">${portEn ? (s.port_scanning||{}).arguments||'enabled' : 'disabled'}</span></div>
-        <div class="col-auto"><span class="text-muted">Crawl:</span> <span style="color:${crawlEn?'#3fb950':'#8b949e'};">${crawlEn ? `depth ${(s.crawl||{}).max_depth||3}, ${(s.crawl||{}).max_pages||500} pages` : 'disabled'}</span></div>
+        <div class="col-auto"><span class="text-muted">Enumeration:</span> <span style="color:var(--text2);">${esc(techOn)}</span></div>
+        <div class="col-auto"><span class="text-muted">Port scan:</span> <span style="color:${portEn?'var(--green)':'var(--text3)'};">${portEn ? (s.port_scanning||{}).arguments||'enabled' : 'disabled'}</span></div>
+        <div class="col-auto"><span class="text-muted">Crawl:</span> <span style="color:${crawlEn?'var(--green)':'var(--text3)'};">${crawlEn ? `depth ${(s.crawl||{}).max_depth||3}, ${(s.crawl||{}).max_pages||500} pages` : 'disabled'}</span></div>
       </div>
     </div>`;
   }
@@ -1292,7 +1397,7 @@ function renderTargets() {
     return `<tr>
       <td>
         <span class="badge bg-secondary me-1" style="font-size:.6rem;">Domain</span>
-        <a href="#" onclick="openDomainDetail(${d.id},'${esc(d.domain)}');return false;" style="color:#58a6ff;text-decoration:none;">
+        <a href="#" onclick="openDomainDetail(${d.id},'${esc(d.domain)}');return false;" style="color:var(--accent);text-decoration:none;">
           <code style="font-size:.85rem;">${esc(d.domain)}</code>
         </a>
       </td>
@@ -1327,26 +1432,32 @@ function renderTargets() {
       : '<span class="text-muted" style="font-size:.75rem;">Not scanned</span>';
     const t = w.techniques || {};
     const techBadges = [
-      t.crawl          ? '<span class="badge" style="font-size:.6rem;background:#1a2a3a;color:#58a6ff;border:1px solid #388bfd44;">crawl</span>' : '',
+      t.crawl          ? '<span class="badge" style="font-size:.6rem;background:rgba(113,112,255,.1);color:var(--accent);border:1px solid rgba(113,112,255,.2);">crawl</span>' : '',
       t.js_analysis    ? '<span class="badge" style="font-size:.6rem;background:#3d2a00;color:#e3b341;border:1px solid #d2992244;">js</span>' : '',
-      t.security_files ? '<span class="badge" style="font-size:.6rem;background:#3d1111;color:#f85149;border:1px solid #da363344;">secfiles</span>' : '',
-      t.screenshot     ? '<span class="badge" style="font-size:.6rem;background:#1a3a1a;color:#3fb950;border:1px solid #3fb95044;">screenshot</span>' : '',
+      t.security_files ? '<span class="badge" style="font-size:.6rem;background:rgba(218,54,51,.12);color:var(--red);border:1px solid rgba(218,54,51,.25);">secfiles</span>' : '',
+      t.screenshot     ? '<span class="badge" style="font-size:.6rem;background:rgba(39,166,68,.1);color:var(--green);border:1px solid rgba(39,166,68,.2);">screenshot</span>' : '',
     ].filter(Boolean).join(' ');
     const techs = (w.technologies || []).slice(0, 3).map(t2 => {
       const n = typeof t2 === 'object' ? t2.name : t2;
       return `<span class="badge bg-secondary" style="font-size:.65rem;">${esc(n)}</span>`;
     }).join(' ');
+    const screenshotCell = w.screenshot_url
+      ? `<a href="${esc(w.screenshot_url)}" target="_blank" rel="noopener" title="View screenshot">
+           <img src="${esc(w.screenshot_url)}" alt="screenshot" loading="lazy"
+                style="height:36px;width:56px;object-fit:cover;border-radius:3px;border:1px solid var(--border);vertical-align:middle;">
+         </a>`
+      : '<span class="text-muted" style="font-size:.75rem;">—</span>';
     return `<tr>
       <td>
         <span class="badge me-1" style="font-size:.6rem;background:#1f6feb;">Website</span>
-        <a href="${esc(w.url)}" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none;font-size:.85rem;">
+        <a href="${esc(w.url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-size:.85rem;">
           <i class="bi bi-globe2" style="font-size:.75rem;"></i> ${esc(w.url)}
         </a>
         ${w.page_title ? `<div class="text-muted" style="font-size:.72rem;margin-top:2px;">${esc(w.page_title)}</div>` : ''}
         ${techBadges ? `<div style="margin-top:3px;">${techBadges}</div>` : ''}
       </td>
       <td>${techs || '<span class="text-muted">—</span>'}</td>
-      <td><span class="text-muted">—</span></td>
+      <td>${screenshotCell}</td>
       <td>${statusDot(w.status)} ${httpCode}</td>
       <td>${lastSeen}</td>
       <td class="text-muted" style="font-size:.75rem;">${w.hostname || '—'}</td>
@@ -1433,9 +1544,9 @@ function renderDetailSubs() {
     }).join('');
     const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
     const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
-    const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:#8b949e;">${esc(ip)}</code>`).join(' ');
+    const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:var(--text3);">${esc(ip)}</code>`).join(' ');
     return `<tr>
-      <td><code style="color:#58a6ff;font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}</td>
+      <td><code style="color:var(--accent);font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}</td>
       <td>${statusDot(s.status)}</td>
       <td>${httpCode}</td>
       <td>${ips || '—'}</td>
@@ -1456,7 +1567,7 @@ function renderDetailPorts() {
   tbody.innerHTML = _ddData.port_scans.map(ps => {
     const badges = (ps.ports||[]).map(p => portBadge(p.port, p.service)).join('');
     return `<tr>
-      <td><code style="color:#58a6ff;">${esc(ps.host)}</code></td>
+      <td><code style="color:var(--accent);">${esc(ps.host)}</code></td>
       <td>${statusDot(ps.status)}</td>
       <td>${badges || '<span class="text-muted">none open</span>'}</td>
       <td class="text-muted">${ps.scan_duration ? ps.scan_duration.toFixed(1)+'s' : '—'}</td>
@@ -1479,8 +1590,8 @@ function renderDetailChanges() {
   tbody.innerHTML = rows.map(e => {
     return `<tr>
       <td>${sevBadge(e.severity)}</td>
-      <td><code style="font-size:.75rem;color:#c9d1d9;">${esc(e.event_type)}</code></td>
-      <td><code style="font-size:.75rem;color:#58a6ff;">${esc(e.target)}</code></td>
+      <td><code style="font-size:.75rem;color:var(--text2);">${esc(e.event_type)}</code></td>
+      <td><code style="font-size:.75rem;color:var(--accent);">${esc(e.target)}</code></td>
       <td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(e.description)}">${esc(e.description)}</td>
       <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
     </tr>`;
@@ -1814,14 +1925,14 @@ function startScanStatusPolling() {
 
 // ── Toast notifications ──────────────────────────────────────────────────────
 function showToast(message, type = 'info') {
-  const colorMap = {success:'#3fb950',danger:'#f85149',warning:'#e3b341',info:'#58a6ff'};
+  const colorMap = {success:'var(--green)',danger:'var(--red)',warning:'var(--amber)',info:'var(--accent)'};
   const iconMap  = {success:'check-circle-fill',danger:'x-circle-fill',warning:'exclamation-triangle-fill',info:'info-circle-fill'};
   const id = 'toast-' + Date.now();
   const color = colorMap[type] || colorMap.info;
   const icon  = iconMap[type]  || iconMap.info;
-  const html = `<div id="${id}" class="toast align-items-center border-0 mb-2" role="alert" style="background:#1c2128;border:1px solid #30363d!important;min-width:280px;">
+  const html = `<div id="${id}" class="toast align-items-center border-0 mb-2" role="alert" style="min-width:280px;">
     <div class="d-flex">
-      <div class="toast-body d-flex align-items-center gap-2" style="font-size:.82rem;color:#c9d1d9;">
+      <div class="toast-body d-flex align-items-center gap-2" style="font-size:.82rem;">
         <i class="bi bi-${icon}" style="color:${color};flex-shrink:0;"></i>
         ${esc(message)}
       </div>

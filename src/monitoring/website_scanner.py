@@ -4,16 +4,18 @@ Comprehensive website scanner.
 Runs a multi-technique scan against a single website URL:
   1. HTTP probe + technology fingerprinting (via VerificationManager)
   2. BFS crawl  — pages, endpoints, forms, external links
-  3. JS analysis — API endpoints, routes, env vars extracted from JS files
+  3. JS analysis — API endpoints, routes extracted from JS files
   4. Security files — robots.txt, .git, .env, swagger, etc.
-  5. Screenshot (optional, requires playwright)
+  5. Screenshot (Playwright headless Chromium)
 
-Returns a rich result dict that the scheduler persists to the database
-and uses to emit typed ChangeEvents.
+The screenshot is always attempted if `techniques.get("screenshot")` is True
+and stored at data/screenshots/<sha256[:16]>.png.  The file path is included
+in the return dict so callers can derive the serve URL.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import urllib.parse
@@ -25,6 +27,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_SCREENSHOT_DIR = "data/screenshots"
+# Playwright timeout for page load (ms)
+_SCREENSHOT_TIMEOUT_MS = 30_000
+
+
+def screenshot_path_for_url(url: str) -> str:
+    """Return the expected screenshot file path for *url* (may not exist yet)."""
+    filename = hashlib.sha256(url.encode()).hexdigest()[:16] + ".png"
+    return os.path.join(_SCREENSHOT_DIR, filename)
+
 
 async def scan_website(
     url: str,
@@ -35,37 +47,10 @@ async def scan_website(
     """
     Run all enabled techniques against *url*.
 
-    Parameters
-    ----------
-    url:
-        Full URL to scan (e.g. ``https://example.com``).
-    techniques:
-        Dict of boolean flags: ``crawl``, ``js_analysis``,
-        ``security_files``, ``screenshot``.
-    config:
-        Application configuration.
-    db:
-        DatabaseManager for persistence helpers.
-
-    Returns
-    -------
-    dict with keys:
-        - ``url``              (str)
-        - ``hostname``         (str)
-        - ``domain_id``        (int | None)
-        - ``live``             (bool)
-        - ``status``           (str)   — "alive" / "dead" / "unknown"
-        - ``http_status``      (int)
-        - ``page_title``       (str)
-        - ``technologies``     (list[dict])
-        - ``pages``            (list[dict])
-        - ``endpoints``        (list[str])   — unique paths from crawl
-        - ``api_endpoints``    (list[str])   — paths extracted from JS
-        - ``js_routes``        (list[str])   — front-end route definitions
-        - ``security_files``   (list[dict])  — accessible sensitive paths
-        - ``disallow_paths``   (list[str])   — robots.txt Disallow entries
-        - ``screenshot_path``  (str | None)
-        - ``error``            (str | None)
+    Returns a dict with:
+        url, hostname, domain_id, live, status, http_status, page_title,
+        technologies, pages, endpoints, api_endpoints, js_routes,
+        security_files, disallow_paths, screenshot_path, ssl_valid, error
     """
     result: dict = {
         "url": url,
@@ -83,10 +68,10 @@ async def scan_website(
         "security_files": [],
         "disallow_paths": [],
         "screenshot_path": None,
+        "ssl_valid": True,
         "error": None,
     }
 
-    # Normalise URL
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     result["url"] = url
@@ -98,7 +83,6 @@ async def scan_website(
         return result
     result["hostname"] = hostname
 
-    # Find or create a parent domain record
     parts = hostname.split(".")
     root = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
     domain = db.get_domain(root) or db.add_domain(root)
@@ -109,8 +93,7 @@ async def scan_website(
     verify_ssl = cfg_scan.verify_ssl
 
     # ------------------------------------------------------------------
-    # Step 1 — HTTP probe + fingerprint via VerificationManager
-    # (persists to DB and handles status / tech detection)
+    # Step 1 — HTTP probe + fingerprint
     # ------------------------------------------------------------------
     try:
         from ..verification.manager import VerificationManager
@@ -120,26 +103,37 @@ async def scan_website(
         result["http_status"] = probe.get("status_code", 0)
         result["page_title"] = probe.get("page_title", "")
         result["technologies"] = probe.get("technologies", [])
+        result["ssl_valid"] = probe.get("ssl_valid", True)
+
         if result["live"]:
             result["status"] = "alive"
         elif probe.get("dns_resolved"):
             result["status"] = "dead"
         else:
             result["status"] = "unknown"
+
+        logger.info(
+            "Website probe %s → live=%s status=%s ssl_valid=%s",
+            hostname, result["live"], result["http_status"], result["ssl_valid"],
+        )
     except Exception as exc:
         logger.warning("Probe failed for %s: %s", url, exc)
         result["error"] = str(exc)
         return result
 
     if not result["live"]:
+        # Still try screenshot even for dead hosts so the user can see what's there
+        if techniques.get("screenshot", False):
+            result["screenshot_path"] = await _take_screenshot(url, timeout)
         return result
 
-    # Use the canonical URL returned by the prober (follows redirects)
+    # Use canonical URL after redirects if available
     base_url = url
 
     # ------------------------------------------------------------------
     # Step 2 — BFS crawl
     # ------------------------------------------------------------------
+    js_urls: list[str] = []
     if techniques.get("crawl", True):
         try:
             from .crawler import BFSCrawler
@@ -155,7 +149,6 @@ async def scan_website(
             result["pages"] = crawl_data.get("pages", [])
             result["endpoints"] = crawl_data.get("endpoints", [])
 
-            # Persist endpoints to DB
             sub = db.get_subdomain(hostname)
             if sub:
                 for path in result["endpoints"]:
@@ -164,17 +157,11 @@ async def scan_website(
                     except Exception:
                         pass
 
-            # Extract JS file URLs for the next step
-            js_urls: list[str] = []
             for asset in crawl_data.get("assets", []):
                 if asset.get("asset_type") == "js":
                     js_urls.append(asset["url"])
-
         except Exception as exc:
             logger.warning("Crawl failed for %s: %s", url, exc)
-            js_urls = []
-    else:
-        js_urls = []
 
     # ------------------------------------------------------------------
     # Step 3 — JS analysis
@@ -184,14 +171,10 @@ async def scan_website(
             from .js_analyzer import analyze_js_file
             all_api_endpoints: set[str] = set()
             all_routes: set[str] = set()
-
-            for js_url in js_urls[:20]:  # cap at 20 files to avoid runaway
+            for js_url in js_urls[:20]:
                 try:
                     js_result = await analyze_js_file(
-                        url=js_url,
-                        domain=root,
-                        timeout=timeout,
-                        verify_ssl=verify_ssl,
+                        url=js_url, domain=root, timeout=timeout, verify_ssl=verify_ssl,
                     )
                     all_api_endpoints.update(js_result.get("endpoints", []))
                     all_routes.update(js_result.get("routes", []))
@@ -201,7 +184,6 @@ async def scan_website(
             result["api_endpoints"] = sorted(all_api_endpoints)
             result["js_routes"] = sorted(all_routes)
 
-            # Persist JS-discovered endpoints to DB
             sub = db.get_subdomain(hostname)
             if sub:
                 for path in result["api_endpoints"]:
@@ -209,7 +191,6 @@ async def scan_website(
                         db.upsert_endpoint(sub.id, path, "GET")
                     except Exception:
                         pass
-
         except Exception as exc:
             logger.warning("JS analysis step failed for %s: %s", url, exc)
 
@@ -220,9 +201,7 @@ async def scan_website(
         try:
             from .security_files import check_security_files
             sec_result = await check_security_files(
-                base_url=base_url,
-                timeout=timeout,
-                verify_ssl=verify_ssl,
+                base_url=base_url, timeout=timeout, verify_ssl=verify_ssl,
             )
             result["security_files"] = sec_result.get("found", [])
             result["disallow_paths"] = sec_result.get("disallow_paths", [])
@@ -230,7 +209,7 @@ async def scan_website(
             logger.warning("Security files check failed for %s: %s", url, exc)
 
     # ------------------------------------------------------------------
-    # Step 5 — Screenshot (optional, requires playwright)
+    # Step 5 — Screenshot
     # ------------------------------------------------------------------
     if techniques.get("screenshot", False):
         result["screenshot_path"] = await _take_screenshot(url, timeout)
@@ -239,19 +218,15 @@ async def scan_website(
 
 
 async def _take_screenshot(url: str, timeout: int = 15) -> Optional[str]:
-    """Take a headless browser screenshot. Returns path or None on failure."""
+    """Take a headless Chromium screenshot. Returns the file path or None."""
     try:
-        from playwright.async_api import async_playwright  # type: ignore[import]
+        from playwright.async_api import async_playwright
     except ImportError:
         logger.debug("playwright not installed — screenshot skipped")
         return None
 
-    import hashlib
-
-    screenshot_dir = "data/screenshots"
-    os.makedirs(screenshot_dir, exist_ok=True)
-    filename = hashlib.sha256(url.encode()).hexdigest()[:16] + ".png"
-    path = os.path.join(screenshot_dir, filename)
+    os.makedirs(_SCREENSHOT_DIR, exist_ok=True)
+    path = screenshot_path_for_url(url)
 
     try:
         async with async_playwright() as pw:
@@ -262,14 +237,36 @@ async def _take_screenshot(url: str, timeout: int = 15) -> Optional[str]:
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-background-networking",
                 ],
             )
-            page = await browser.new_page(viewport={"width": 1280, "height": 800})
-            await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
-            await page.screenshot(path=path, full_page=False)
-            await browser.close()
-        logger.info("Screenshot saved: %s", path)
-        return path
+            ctx = await browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                ignore_https_errors=True,
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+            )
+            page = await ctx.new_page()
+            try:
+                await page.goto(
+                    url,
+                    timeout=max(_SCREENSHOT_TIMEOUT_MS, timeout * 1000),
+                    wait_until="domcontentloaded",
+                )
+                # Brief settle to let critical CSS render
+                await page.wait_for_timeout(800)
+                await page.screenshot(path=path, full_page=False)
+                logger.info("Screenshot saved: %s → %s", url, path)
+                return path
+            except Exception as exc:
+                logger.warning("Page load/screenshot failed for %s: %s", url, exc)
+                return None
+            finally:
+                await browser.close()
     except Exception as exc:
-        logger.warning("Screenshot failed for %s: %s", url, exc)
+        logger.warning("Playwright launch failed for %s: %s", url, exc)
         return None

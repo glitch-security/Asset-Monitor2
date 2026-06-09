@@ -1,8 +1,16 @@
 """
-HTTP prober for subdomain liveness detection.
+HTTP prober for subdomain and website liveness detection.
 
-Tries HTTPS then HTTP on each configured port, follows redirects, and
-records the full redirect chain, page title, and response metadata.
+Key design decisions:
+- Standard ports (80, 443) are NOT included in the URL string — some CDNs and
+  load balancers reject `https://host:443` (explicit standard port) even though
+  it is technically equivalent.  Omitting them matches normal browser behaviour.
+- HTTPS probing always precedes HTTP for the same port family.
+- If SSL verification fails and verify_ssl=True, we retry without verification
+  so the host is still flagged as alive (with ssl_valid=False in the result).
+- Body reads are capped at 512 KB — enough for title/fingerprint extraction
+  without timing out on very large responses.
+- Connect and read timeouts are set independently for tighter control.
 """
 
 from __future__ import annotations
@@ -17,67 +25,132 @@ logger = logging.getLogger(__name__)
 
 PORTS: list[int] = [80, 443, 8080, 8443, 8888]
 
-# Status codes that indicate the host is "live" — any valid HTTP response means the
-# server is reachable, including 4xx/5xx (connection worked; server responded)
-_LIVE_STATUS_CODES: set[int] = {
-    200, 201, 204,
-    301, 302, 303, 307, 308,
-    400, 401, 403, 404, 405, 406, 409, 410, 422, 429,
-    500, 501, 502, 503, 504,
-}
+# Any valid HTTP response means the server is reachable, including 4xx / 5xx.
+_LIVE_STATUS_CODES: set[int] = set(range(200, 600))
 
 _TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_BODY_LIMIT = 512 * 1024  # 512 KB
 
 
 def _extract_title(html: str) -> str:
-    """Return the text content of the first <title> element, or empty string."""
     m = _TITLE_RE.search(html)
     if not m:
         return ""
     return re.sub(r"\s+", " ", m.group(1)).strip()
 
 
-def _scheme_for_port(port: int) -> str:
-    """Return the conventional scheme for a given port number."""
-    return "https" if port in (443, 8443) else "http"
+def _build_url(scheme: str, fqdn: str, port: int) -> str:
+    """Build a URL, omitting the port when it is the scheme default."""
+    if (scheme == "https" and port == 443) or (scheme == "http" and port == 80):
+        return f"{scheme}://{fqdn}"
+    return f"{scheme}://{fqdn}:{port}"
+
+
+def _build_attempts(ports: list[int]) -> list[tuple[str, int]]:
+    """Return (scheme, port) pairs to try, HTTPS before HTTP on ambiguous ports."""
+    attempts: list[tuple[str, int]] = []
+    for port in ports:
+        if port in (443, 8443):
+            attempts.append(("https", port))
+        elif port == 80:
+            # Try plain HTTP first (very common redirect entry point), then HTTPS
+            # fallback in case the server does HTTPS-on-80 (unusual but possible).
+            attempts.append(("http", port))
+            attempts.append(("https", port))
+        else:
+            attempts.append(("https", port))
+            attempts.append(("http", port))
+    return attempts
+
+
+async def _single_probe(
+    url: str,
+    verify: bool,
+    timeout_connect: float,
+    timeout_read: float,
+) -> Optional[dict]:
+    """
+    Make one HTTP GET to *url*.  Return a result dict on any HTTP response,
+    or None on connection/protocol errors.
+    """
+    timeout = httpx.Timeout(
+        connect=timeout_connect,
+        read=timeout_read,
+        write=timeout_connect,
+        pool=timeout_connect,
+    )
+    try:
+        async with httpx.AsyncClient(
+            verify=verify,
+            timeout=timeout,
+            follow_redirects=True,
+            max_redirects=10,
+        ) as client:
+            response = await client.get(url)
+
+            # Build redirect chain from response history
+            chain = [str(r.url) for r in response.history] + [str(response.url)]
+
+            # Read body, capped to avoid timeouts on enormous pages
+            body_bytes = response.content[:_BODY_LIMIT]
+            body_text = body_bytes.decode("utf-8", errors="replace")
+
+            return {
+                "status_code": response.status_code,
+                "url": str(response.url),
+                "redirect_chain": chain,
+                "response_headers": dict(response.headers),
+                "response_size": int(response.headers.get("content-length", len(body_bytes))),
+                "page_title": _extract_title(body_text),
+                "body": body_text,
+                "ssl_valid": verify,
+            }
+
+    except httpx.SSLError:
+        return None  # caller retries without verify
+    except httpx.TimeoutException:
+        logger.debug("Timeout probing %s", url)
+        return None
+    except httpx.ConnectError:
+        logger.debug("Connect error probing %s", url)
+        return None
+    except httpx.RemoteProtocolError:
+        logger.debug("Protocol error probing %s", url)
+        return None
+    except Exception as exc:
+        logger.debug("Unexpected error probing %s: %s", url, exc)
+        return None
 
 
 async def probe_subdomain(
     fqdn: str,
     ports: list[int] | None = None,
-    timeout: int = 10,
+    timeout: int = 15,
     verify_ssl: bool = True,
 ) -> dict:
     """
-    Probe *fqdn* for HTTP/HTTPS liveness across the supplied *ports*.
+    Probe *fqdn* for HTTP/HTTPS liveness across the given *ports*.
 
-    For each port the function tries HTTPS first, then HTTP (unless the port
-    is an unambiguous HTTP port, in which case only HTTP is tried).  The first
-    port/scheme combination that produces a meaningful response is used as the
-    canonical result.
+    For each (scheme, port) pair it attempts a GET with SSL verification.
+    On SSL error, retries once without verification (flagging ssl_valid=False).
+    Returns on the first successful HTTP response.
 
     Parameters
     ----------
     fqdn:
         Hostname to probe (no scheme or path).
     ports:
-        List of TCP ports to attempt.  Defaults to :data:`PORTS`.
+        TCP ports to try. Defaults to [80, 443, 8080, 8443, 8888].
     timeout:
-        Per-request timeout in seconds.
+        Base timeout in seconds (connect uses half, read uses the full value).
+    verify_ssl:
+        When True, SSL certificates are validated.  On failure a second attempt
+        is made without verification so the host is still detected as alive.
 
     Returns
     -------
-    dict with keys:
-        - ``fqdn``             (str)
-        - ``live``             (bool)
-        - ``url``              (str)  – canonical URL that responded
-        - ``status_code``      (int)
-        - ``response_size``    (int)  – body length in bytes
-        - ``page_title``       (str)
-        - ``response_headers`` (dict)
-        - ``redirect_chain``   (list[str]) – ordered list of URLs visited
-        - ``port``             (int)
-        - ``scheme``           (str)
+    dict with keys: fqdn, live, url, status_code, response_size, page_title,
+    body, response_headers, redirect_chain, port, scheme, ssl_valid.
     """
     if ports is None:
         ports = PORTS
@@ -94,84 +167,34 @@ async def probe_subdomain(
         "redirect_chain": [],
         "port": 0,
         "scheme": "",
+        "ssl_valid": True,
     }
 
-    # Build ordered list of (scheme, port) pairs to try.
-    # HTTPS is always attempted before HTTP for the same port.
-    attempts: list[tuple[str, int]] = []
-    for port in ports:
-        if port in (443, 8443):
-            attempts.append(("https", port))
-        elif port in (80,):
-            attempts.append(("http", port))
-        else:
-            # Ambiguous ports: try HTTPS first, then HTTP
-            attempts.append(("https", port))
-            attempts.append(("http", port))
+    timeout_connect = max(5.0, timeout / 2)
+    timeout_read = float(timeout)
 
-    for scheme, port in attempts:
-        url = f"{scheme}://{fqdn}:{port}"
-        redirect_chain: list[str] = []
+    for scheme, port in _build_attempts(ports):
+        url = _build_url(scheme, port=port, fqdn=fqdn)
 
-        try:
-            async with httpx.AsyncClient(
-                verify=verify_ssl,
-                timeout=httpx.Timeout(timeout),
-                follow_redirects=True,
-                max_redirects=10,
-                event_hooks={
-                    "request": [
-                        lambda req: redirect_chain.append(str(req.url))
-                        if redirect_chain  # only subsequent hops
-                        else None
-                    ]
-                },
-            ) as client:
-                # Seed the chain with the initial URL
-                redirect_chain.append(url)
+        hit = await _single_probe(url, verify=verify_ssl, timeout_connect=timeout_connect, timeout_read=timeout_read)
 
-                response = await client.get(url)
+        # On SSL error, retry without verification
+        if hit is None and verify_ssl and scheme == "https":
+            hit = await _single_probe(url, verify=False, timeout_connect=timeout_connect, timeout_read=timeout_read)
+            if hit is not None:
+                hit["ssl_valid"] = False
+                logger.info("SSL verification failed for %s — host is alive with unverified cert", fqdn)
 
-                # Collect redirect history from httpx's built-in tracking
-                full_chain: list[str] = [url]
-                for hist in response.history:
-                    loc = str(hist.headers.get("location", ""))
-                    if loc and loc not in full_chain:
-                        full_chain.append(loc)
-                final_url = str(response.url)
-                if final_url not in full_chain:
-                    full_chain.append(final_url)
+        if hit is None:
+            continue
 
-                body_bytes = response.content
-                body_text = body_bytes.decode("utf-8", errors="replace")
+        # Record the first response regardless of status, keep trying if not live
+        result.update(hit)
+        result["port"] = port
+        result["scheme"] = scheme
 
-                result["url"] = final_url
-                result["status_code"] = response.status_code
-                result["response_size"] = len(body_bytes)
-                result["page_title"] = _extract_title(body_text)
-                result["body"] = body_text
-                result["response_headers"] = dict(response.headers)
-                result["redirect_chain"] = full_chain
-                result["port"] = port
-                result["scheme"] = scheme
+        if hit["status_code"] in _LIVE_STATUS_CODES:
+            result["live"] = True
+            return result
 
-                if response.status_code in _LIVE_STATUS_CODES:
-                    result["live"] = True
-                    return result  # First successful live response wins
-
-                # Non-live but valid response — record it and keep trying
-                # (may find a live port later)
-
-        except httpx.TimeoutException:
-            logger.debug("Timeout probing %s", url)
-        except httpx.ConnectError:
-            logger.debug("Connection refused probing %s", url)
-        except httpx.RemoteProtocolError:
-            logger.debug("Protocol error probing %s", url)
-        except Exception as exc:
-            logger.debug("Error probing %s: %s", url, exc)
-
-    # If we got any response at all (even non-live status), populate result
-    # with the last attempted values already stored above (they may be from a
-    # non-live attempt).  The ``live`` flag remains False.
     return result

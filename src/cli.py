@@ -6,7 +6,7 @@ Entry point commands:
   report       — print a tabulated terminal report
   export       — write a JSON or HTML report to a file
   add          — add a domain / subdomain / website to monitoring
-  daemon       — start the APScheduler loop
+  daemon       — start the uvicorn + APScheduler daemon
   reset-admin  — reset (or create) the admin dashboard user
 """
 
@@ -14,9 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
+import os
 import sys
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -34,10 +33,6 @@ from src.database import (
 
 console = Console()
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}
 
@@ -59,7 +54,7 @@ def _setup_logging(level: str = "INFO") -> None:
 
 
 def _parse_since(since: Optional[str]) -> Optional[datetime]:
-    """Parse a duration string like ``24h`` or ``7d`` to a UTC cutoff datetime."""
+    """Parse a duration string like ``24h`` or ``7d`` into a UTC cutoff datetime."""
     if not since:
         return None
     since = since.strip().lower()
@@ -77,28 +72,19 @@ def _parse_since(since: Optional[str]) -> Optional[datetime]:
     )
 
 
-# ---------------------------------------------------------------------------
-# Root group
-# ---------------------------------------------------------------------------
-
+# ── Root group ───────────────────────────────────────────────────────────────
 
 @click.group()
 @click.option(
-    "--config",
-    default="config.yaml",
-    show_default=True,
+    "--config", default="config.yaml", show_default=True,
     help="Path to the YAML configuration file.",
 )
 @click.option(
-    "--db",
-    default="data/assetmonitor.db",
-    show_default=True,
+    "--db", default="data/assetmonitor.db", show_default=True,
     help="Path to the SQLite database file.",
 )
 @click.option(
-    "--log-level",
-    default="INFO",
-    show_default=True,
+    "--log-level", default="INFO", show_default=True,
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
     help="Logging verbosity.",
 )
@@ -118,27 +104,22 @@ def cli(ctx: click.Context, config: str, db: str, log_level: str) -> None:
         sys.exit(1)
 
     db_manager = DatabaseManager(db)
-
-    # Apply any DB-stored config overrides on top of the YAML config
     db_manager.apply_settings_to_config(app_config)
 
     ctx.obj["config"] = app_config
     ctx.obj["db"] = db_manager
 
 
-# ---------------------------------------------------------------------------
-# scan
-# ---------------------------------------------------------------------------
-
+# ── scan ─────────────────────────────────────────────────────────────────────
 
 @cli.command()
 @click.option(
     "--module",
     type=click.Choice(
-        ["all", "subdomains", "websites", "known-subdomains", "ports"], case_sensitive=False
+        ["all", "subdomains", "websites", "known-subdomains", "ports"],
+        case_sensitive=False,
     ),
-    default="all",
-    show_default=True,
+    default="all", show_default=True,
     help="Which scan module(s) to run.",
 )
 @click.option("--domain", default=None, help="Limit scan to a single domain.")
@@ -157,10 +138,12 @@ def scan(ctx: click.Context, module: str, domain: Optional[str]) -> None:
         sched = SchedManager(config, db, notif_mgr)
 
         if domain:
-            # Ensure the domain exists in DB
             db.add_domain(domain)
 
-        console.print(f"[bold cyan]Running scan module=[/bold cyan][bold]{module}[/bold]", end="")
+        console.print(
+            f"[bold cyan]Running scan module=[/bold cyan][bold]{module}[/bold]",
+            end="",
+        )
         if domain:
             console.print(f" [dim]for domain=[/dim][bold]{domain}[/bold]")
         else:
@@ -172,7 +155,9 @@ def scan(ctx: click.Context, module: str, domain: Optional[str]) -> None:
             from src.scanning.manager import PortScanManager
             psm = PortScanManager(config, db)
             events = await psm.scan_all()
-            console.print(f"[bold green]Port scan complete.[/bold green] {len(events)} change event(s).")
+            console.print(
+                f"[bold green]Port scan complete.[/bold green] {len(events)} change event(s)."
+            )
             return
         else:
             console.print(f"[red]Unknown module: {module}[/red]")
@@ -183,31 +168,21 @@ def scan(ctx: click.Context, module: str, domain: Optional[str]) -> None:
     asyncio.run(_run())
 
 
-# ---------------------------------------------------------------------------
-# report
-# ---------------------------------------------------------------------------
-
+# ── report ────────────────────────────────────────────────────────────────────
 
 @cli.command(name="report")
 @click.option(
-    "--type",
-    "report_type",
+    "--type", "report_type",
     type=click.Choice(["subdomains", "changes", "events"], case_sensitive=False),
-    default="changes",
-    show_default=True,
+    default="changes", show_default=True,
     help="Type of report to display.",
 )
 @click.option("--status", default=None, help="Filter by status (e.g. alive, dead).")
 @click.option(
-    "--severity",
-    default=None,
+    "--severity", default=None,
     help="Filter by minimum severity (CRITICAL/HIGH/MEDIUM/LOW/INFO).",
 )
-@click.option(
-    "--since",
-    default=None,
-    help="Show events since this duration ago (e.g. 24h, 7d).",
-)
+@click.option("--since", default=None, help="Show events since this duration ago (e.g. 24h, 7d).")
 @click.option("--domain", default=None, help="Limit to a specific domain.")
 @click.pass_context
 def report(
@@ -243,9 +218,7 @@ def _report_subdomains(
         if status:
             q = q.where(Subdomain.status == status.lower())
         if domain:
-            dom_obj = session.scalar(
-                _select(Domain).where(Domain.domain == domain)
-            )
+            dom_obj = session.scalar(_select(Domain).where(Domain.domain == domain))
             if dom_obj:
                 q = q.where(Subdomain.domain_id == dom_obj.id)
             else:
@@ -276,7 +249,7 @@ def _report_subdomains(
             str(sub.http_status or "—"),
             sub.classification or "—",
             techs or "—",
-            (sub.first_seen.strftime("%Y-%m-%d") if sub.first_seen else "—"),
+            sub.first_seen.strftime("%Y-%m-%d") if sub.first_seen else "—",
         )
 
     console.print(table)
@@ -297,8 +270,7 @@ def _report_events(
             min_level = _SEVERITY_ORDER.get(severity.upper(), 99)
             q_results: List[ChangeEvent] = list(session.scalars(q).all())
             rows = [
-                ev
-                for ev in q_results
+                ev for ev in q_results
                 if _SEVERITY_ORDER.get(ev.severity.upper(), 99) <= min_level
             ]
         else:
@@ -306,21 +278,17 @@ def _report_events(
 
     if cutoff:
         rows = [
-            ev
-            for ev in rows
-            if ev.detected_at
-            and (
+            ev for ev in rows
+            if ev.detected_at and (
                 ev.detected_at.replace(tzinfo=timezone.utc)
                 if ev.detected_at.tzinfo is None
                 else ev.detected_at
-            )
-            >= cutoff
+            ) >= cutoff
         ]
 
     if domain:
         rows = [
-            ev
-            for ev in rows
+            ev for ev in rows
             if ev.target == domain or ev.target.endswith(f".{domain}")
         ]
 
@@ -341,11 +309,7 @@ def _report_events(
             ev.event_type,
             ev.target,
             ev.description[:80] + ("…" if len(ev.description) > 80 else ""),
-            (
-                ev.detected_at.strftime("%Y-%m-%d %H:%M")
-                if ev.detected_at
-                else "—"
-            ),
+            ev.detected_at.strftime("%Y-%m-%d %H:%M") if ev.detected_at else "—",
             alerted_str,
         )
 
@@ -353,62 +317,38 @@ def _report_events(
     console.print(f"[dim]Total: {len(rows)} event(s)[/dim]")
 
 
-# ---------------------------------------------------------------------------
-# export
-# ---------------------------------------------------------------------------
-
+# ── export ────────────────────────────────────────────────────────────────────
 
 @cli.command(name="export")
 @click.option(
-    "--format",
-    "fmt",
+    "--format", "fmt",
     type=click.Choice(["json", "html"], case_sensitive=False),
-    default="json",
-    show_default=True,
+    default="json", show_default=True,
     help="Output format.",
 )
-@click.option(
-    "--output",
-    "output",
-    default=None,
-    help="Output file path (defaults: report.json / report.html).",
-)
+@click.option("--output", "output", default=None,
+              help="Output file path (defaults: report.json / report.html).")
 @click.option("--domain", default=None, help="Limit export to a specific domain.")
 @click.pass_context
-def export(
-    ctx: click.Context,
-    fmt: str,
-    output: Optional[str],
-    domain: Optional[str],
-) -> None:
+def export(ctx: click.Context, fmt: str, output: Optional[str], domain: Optional[str]) -> None:
     """Export monitoring data to a JSON or HTML file."""
 
     async def _run() -> None:
         db: DatabaseManager = ctx.obj["db"]
-        out = output or (f"report.{fmt}")
-
-        console.print(
-            f"Exporting [bold]{fmt.upper()}[/bold] report to [cyan]{out}[/cyan]..."
-        )
-
+        out = output or f"report.{fmt}"
+        console.print(f"Exporting [bold]{fmt.upper()}[/bold] report to [cyan]{out}[/cyan]...")
         if fmt == "json":
             from src.reporting.json_export import export_json
-
             await export_json(db, out, domain=domain)
         else:
             from src.reporting.html_report import generate_report
-
             await generate_report(db, out, domain=domain)
-
         console.print(f"[bold green]Report written:[/bold green] {out}")
 
     asyncio.run(_run())
 
 
-# ---------------------------------------------------------------------------
-# add
-# ---------------------------------------------------------------------------
-
+# ── add ───────────────────────────────────────────────────────────────────────
 
 @cli.command(name="add")
 @click.argument(
@@ -431,33 +371,24 @@ def add(ctx: click.Context, resource_type: str, value: str) -> None:
 
     if resource_type == "domain":
         dom = db.add_domain(value)
-        console.print(
-            f"[green]Domain added:[/green] [cyan]{dom.domain}[/cyan] (id={dom.id})"
-        )
+        console.print(f"[green]Domain added:[/green] [cyan]{dom.domain}[/cyan] (id={dom.id})")
 
     elif resource_type == "subdomain":
-        # Infer parent domain from FQDN
         parts = value.split(".")
         root = ".".join(parts[-2:]) if len(parts) >= 2 else value
         parent = db.get_domain(root)
         if parent is None:
             parent = db.add_domain(root)
             console.print(f"[dim]Auto-created parent domain: {root}[/dim]")
-
         sub, is_new = db.upsert_subdomain(
-            fqdn=value,
-            domain_id=parent.id,
-            discovery_technique="manual",
+            fqdn=value, domain_id=parent.id, discovery_technique="manual",
         )
         verb = "added" if is_new else "already exists"
-        console.print(
-            f"[green]Subdomain {verb}:[/green] [cyan]{sub.fqdn}[/cyan] (id={sub.id})"
-        )
-
-        _append_to_file("data/subdomains.txt", value)
+        console.print(f"[green]Subdomain {verb}:[/green] [cyan]{sub.fqdn}[/cyan] (id={sub.id})")
 
     elif resource_type == "website":
-        _append_to_file("data/websites.txt", value)
+        from src.monitoring.website_store import add_website
+        add_website(value)
         console.print(f"[green]Website added to monitoring:[/green] [cyan]{value}[/cyan]")
 
     else:
@@ -465,29 +396,11 @@ def add(ctx: click.Context, resource_type: str, value: str) -> None:
         sys.exit(1)
 
 
-def _append_to_file(path: str, value: str) -> None:
-    """Append a value to a text file if it isn't already present."""
-    import os
-
-    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    existing: List[str] = []
-    if os.path.isfile(path):
-        with open(path, "r", encoding="utf-8") as fh:
-            existing = [ln.strip() for ln in fh if not ln.strip().startswith("#")]
-    if value not in existing:
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(f"{value}\n")
-
-
-# ---------------------------------------------------------------------------
-# reset-admin
-# ---------------------------------------------------------------------------
-
+# ── reset-admin ───────────────────────────────────────────────────────────────
 
 @cli.command(name="reset-admin")
 @click.option(
-    "--password",
-    default=None,
+    "--password", default=None,
     help="New admin password. If omitted a random one is generated and printed.",
 )
 @click.pass_context
@@ -518,12 +431,8 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
         console.print(
             "[bold yellow]┌─ ADMIN PASSWORD RESET ────────────────────────────────────────────┐[/bold yellow]"
         )
-        console.print(
-            "[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
-        )
-        console.print(
-            f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{new_pwd}[/bold cyan]"
-        )
+        console.print("[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]")
+        console.print(f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{new_pwd}[/bold cyan]")
         console.print(
             "[bold yellow]│  Also saved to: data/initial_credentials.txt                     │[/bold yellow]"
         )
@@ -533,7 +442,6 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
     else:
         console.print("[bold green]Admin password updated.[/bold green]")
 
-    # Write to mounted volume so it's readable from host
     _creds_path = "data/initial_credentials.txt"
     try:
         os.makedirs("data", exist_ok=True)
@@ -547,38 +455,32 @@ def reset_admin(ctx: click.Context, password: Optional[str]) -> None:
         logger.warning("Could not write credentials file: %s", _e)
 
 
-# ---------------------------------------------------------------------------
-# daemon
-# ---------------------------------------------------------------------------
-
+# ── daemon ────────────────────────────────────────────────────────────────────
 
 @cli.command(name="daemon")
 @click.pass_context
 def daemon(ctx: click.Context) -> None:
-    """Start the APScheduler daemon loop.
+    """Start the uvicorn ASGI server with the APScheduler daemon.
 
-    Runs the full scan on the interval configured in config.yaml
-    (``scan.interval_minutes``).  Handles SIGTERM / SIGINT for graceful
-    shutdown.
+    Runs the web dashboard and the periodic scan loop together in a single
+    async event loop — no background threads, no asyncio.run() bridges.
+    Handles SIGTERM / SIGINT via uvicorn's built-in signal handling.
     """
+    import uvicorn
+
     config: AppConfig = ctx.obj["config"]
     db: DatabaseManager = ctx.obj["db"]
 
     from src.notifications.manager import NotificationManager
     from src.scheduler import SchedManager
 
-    # Ensure at least one login exists; print generated password on first run
     temp_pwd = db.ensure_default_admin()
     if temp_pwd:
         console.print(
             "[bold yellow]┌─ DEFAULT ADMIN CREDENTIALS ──────────────────────────────────────┐[/bold yellow]"
         )
-        console.print(
-            "[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]"
-        )
-        console.print(
-            f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{temp_pwd}[/bold cyan]"
-        )
+        console.print("[bold yellow]│  Username:[/bold yellow] [bold cyan]admin[/bold cyan]")
+        console.print(f"[bold yellow]│  Password:[/bold yellow] [bold cyan]{temp_pwd}[/bold cyan]")
         console.print(
             "[bold yellow]│  Also saved to: data/initial_credentials.txt                     │[/bold yellow]"
         )
@@ -588,18 +490,14 @@ def daemon(ctx: click.Context) -> None:
         console.print(
             "[bold yellow]└──────────────────────────────────────────────────────────────────┘[/bold yellow]"
         )
-        logger.info("Default admin user created — credentials saved to data/initial_credentials.txt")
-
-        # Write to mounted volume so user can read from host without docker logs
         _creds_path = "data/initial_credentials.txt"
         try:
             os.makedirs("data", exist_ok=True)
             with open(_creds_path, "w", encoding="utf-8") as _f:
                 _f.write("AssetMonitor — Initial Admin Credentials\n")
                 _f.write("=" * 42 + "\n")
-                _f.write(f"Username : admin\n")
-                _f.write(f"Password : {temp_pwd}\n")
-                _f.write("\n")
+                _f.write("Username : admin\n")
+                _f.write(f"Password : {temp_pwd}\n\n")
                 _f.write("Change this password immediately via Settings → Users.\n")
                 _f.write("Delete this file after your first login.\n")
         except Exception as _e:
@@ -608,36 +506,22 @@ def daemon(ctx: click.Context) -> None:
     notif_mgr = NotificationManager(config, db)
     sched = SchedManager(config, db, notif_mgr)
 
+    from src.web.server import build_app
+    app = build_app(db, config, sched_manager=sched)
+
     console.print(
-        f"[bold cyan]AssetMonitor daemon starting[/bold cyan] "
+        f"[bold cyan]AssetMonitor starting[/bold cyan] "
         f"(interval={config.scan.interval_minutes}m)"
     )
-
-    # Start the web dashboard if enabled
     if config.web.enabled:
-        from src.web.server import start_web_server
-        start_web_server(db, config, host=config.web.host, port=config.web.port, sched_manager=sched)
         console.print(
             f"[bold cyan]Dashboard:[/bold cyan] http://{config.web.host}:{config.web.port}"
         )
 
-    # Run an immediate scan on startup, then let the scheduler take over.
-    asyncio.run(sched.run_full_scan())
-
-    sched.start()
-
-    # Graceful shutdown on SIGTERM / SIGINT
-    def _shutdown(signum: int, frame: Any) -> None:
-        console.print("\n[yellow]Received shutdown signal — stopping scheduler…[/yellow]")
-        sched.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
-
-    console.print("[dim]Daemon running. Press Ctrl+C to stop.[/dim]")
-    try:
-        while True:
-            time.sleep(60)
-    except KeyboardInterrupt:
-        _shutdown(signal.SIGINT, None)
+    uvicorn.run(
+        app,
+        host=config.web.host if config.web.enabled else "127.0.0.1",
+        port=config.web.port if config.web.enabled else 5000,
+        log_level="warning",
+        access_log=False,
+    )
