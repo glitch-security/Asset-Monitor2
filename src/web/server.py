@@ -782,7 +782,7 @@ def build_app(
     # API — user management
     # ────────────────────────────────────────────────────────────────────────
 
-    @app.get("/api/users")
+    @app.get("/api/users", dependencies=[Depends(_require_admin)])
     async def api_list_users():
         try:
             return db.list_users()
