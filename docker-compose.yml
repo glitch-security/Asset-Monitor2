@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-python:3.11-slim}
 
     image: assetmonitor:latest
 
@@ -45,6 +47,11 @@ services:
     # Remove if you prefer TCP-connect-only scanning with no capabilities.
     cap_add:
       - NET_RAW
+
+    # Force IPv4 DNS to avoid IPv6-only resolution issues on some networks
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
     ports:
       # Web dashboard — http://localhost:5000

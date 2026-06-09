@@ -31,26 +31,34 @@ No Python, no pip, no host dependencies.
 
 ## Quick Start
 
-```bash
-# 1. Clone the repo
+The startup scripts handle everything: Docker Hub connectivity checks, base image caching, data-directory setup, and first-run credential display.
+
+**Windows (PowerShell):**
+```powershell
 git clone <repo-url> asset-monitor
 cd asset-monitor
-
-# Linux only — set correct ownership on the data directory
-mkdir -p data && chown 1000:1000 data
-
-# 2. Start
-docker compose up -d
-
-# 3. Get your login credentials
-cat data/initial_credentials.txt
-
-# 4. Open the dashboard
-open http://localhost:5000   # macOS
-# or navigate to http://localhost:5000 in your browser
+.\start.ps1
 ```
 
-On first start, the container generates a random admin password and writes it to `data/initial_credentials.txt`. Read it, log in, then delete the file.
+**Linux / macOS:**
+```bash
+git clone <repo-url> asset-monitor
+cd asset-monitor
+chmod +x start.sh && ./start.sh
+```
+
+Then open **http://localhost:5000** — your login credentials are printed to the terminal and saved to `data/initial_credentials.txt`. Delete that file after your first login.
+
+### Troubleshooting: Docker Hub unreachable
+
+If your network blocks Docker Hub (registry-1.docker.io), the startup script automatically retries via Google's mirror (`mirror.gcr.io`) and tags the image correctly before building. No daemon configuration changes are required.
+
+If you prefer to fix it at the Docker level instead, add a registry mirror via **Docker Desktop → Settings → Docker Engine**:
+```json
+{
+  "registry-mirrors": ["https://mirror.gcr.io"]
+}
+```
 
 ---
 
