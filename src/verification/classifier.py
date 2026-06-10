@@ -94,11 +94,11 @@ CLASSIFICATION_RULES: dict[str, list[str]] = {
     ],
     "VPN": [
         "vpn",
-        "remote",
-        "access",
         "openvpn",
         "wireguard",
         "tunnel",
+        "ztna",
+        "zerotrust",
     ],
 }
 

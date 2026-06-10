@@ -1,11 +1,13 @@
 """DNS record enumeration (MX, NS, TXT, SOA) for target domain."""
 
+import logging
 import re
 
 import dns.asyncresolver
 import dns.exception
 import dns.rdatatype
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 async def enumerate_dns_records(

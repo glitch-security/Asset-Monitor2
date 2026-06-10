@@ -1,10 +1,11 @@
 """TLS certificate Subject Alternative Name (SAN) extraction."""
 
 import asyncio
+import logging
 import ssl
 from typing import Optional
 
-from loguru import logger
+logger = logging.getLogger(__name__)
 
 
 def _extract_sans_from_cert(cert: dict) -> list[str]:

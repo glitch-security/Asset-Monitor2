@@ -249,6 +249,11 @@ class SchedManager:
 
     async def _scan_domain(self, dom: Domain) -> tuple[List[ChangeEvent], int]:
         """Run enumeration and verification for a single root domain."""
+        # ── Scope enforcement ──
+        if self._config.scope.enforce_scope and dom.scope_type == "out_of_scope":
+            logger.info("Skipping out-of-scope domain: %s", dom.domain)
+            return [], 0
+
         new_events: List[ChangeEvent] = []
         subdomain_count = 0
         cfg = self._config
@@ -353,6 +358,69 @@ class SchedManager:
             except Exception as exc:
                 logger.error("Verification failed for %s: %s", dom.domain, exc, exc_info=True)
 
+        # ── Phase: Cloud asset discovery ──
+        if techniques.cloud_asset_discovery:
+            try:
+                from src.enumeration.cloud_assets import discover_cloud_assets
+                sub_fqdns = [s.fqdn for s in self._db.get_live_subdomains(dom.id)]
+                cloud_findings = await discover_cloud_assets(dom.domain, sub_fqdns, self._db, cfg)
+                logger.info("Cloud asset discovery for %s: %d findings", dom.domain, len(cloud_findings))
+            except ImportError:
+                logger.debug("cloud_assets module not available — skipping")
+            except Exception as exc:
+                logger.warning("Cloud asset discovery failed for %s: %s", dom.domain, exc)
+
+        # ── Phase: Dorking ──
+        if techniques.dorking:
+            try:
+                from src.enumeration.dorking import run_dorking
+                gh_token = cfg.api_keys.github_token if hasattr(cfg.api_keys, 'github_token') else ""
+                dork_findings = await run_dorking(dom.domain, self._db, cfg, github_token=gh_token or None)
+                logger.info("Dorking for %s: %d findings", dom.domain, len(dork_findings))
+            except ImportError:
+                logger.debug("dorking module not available — skipping")
+            except Exception as exc:
+                logger.warning("Dorking failed for %s: %s", dom.domain, exc)
+
+        # ── Phase: Attack surface scanning (dir bruteforce + API discovery) on live subs ──
+        atk_cfg = getattr(cfg, 'attack_surface', None)
+        if atk_cfg:
+            live_subs = self._db.get_live_subdomains(dom.id)
+            for sub in live_subs[:20]:  # Cap to avoid runaway scans
+                base_url = f"https://{sub.fqdn}"
+
+                # Directory brute-force
+                if getattr(atk_cfg, 'dir_bruteforce', False):
+                    try:
+                        from src.scanning.dir_bruteforce import bruteforce_directories
+                        await bruteforce_directories(
+                            base_url=base_url,
+                            db=self._db,
+                            subdomain_id=sub.id,
+                            config=cfg,
+                            max_concurrent=getattr(atk_cfg, 'dir_bruteforce_concurrency', 20),
+                        )
+                    except ImportError:
+                        pass
+                    except Exception as exc:
+                        logger.debug("Dir brute-force failed for %s: %s", sub.fqdn, exc)
+
+                # API endpoint discovery
+                if getattr(atk_cfg, 'api_discovery', False):
+                    try:
+                        from src.scanning.api_discovery import discover_api_endpoints
+                        await discover_api_endpoints(
+                            base_url=base_url,
+                            db=self._db,
+                            subdomain_id=sub.id,
+                            config=cfg,
+                            max_concurrent=getattr(atk_cfg, 'api_discovery_concurrency', 15),
+                        )
+                    except ImportError:
+                        pass
+                    except Exception as exc:
+                        logger.debug("API discovery failed for %s: %s", sub.fqdn, exc)
+
         return new_events, subdomain_count
 
     async def _scan_websites(self, websites: List[dict]) -> List[ChangeEvent]:
@@ -430,6 +498,27 @@ class SchedManager:
                             diff_data=finding,
                         )
                         new_events.append(ev)
+
+                # ── Broken link hijacking ──
+                atk_cfg = getattr(self._config, 'attack_surface', None)
+                if atk_cfg and getattr(atk_cfg, 'broken_link_hijacking', False):
+                    try:
+                        from src.monitoring.broken_links import check_broken_links
+                        crawl_data = scan_result.get("crawl_data", {})
+                        if crawl_data:
+                            sub = self._db.get_subdomain(hostname)
+                            if sub:
+                                await check_broken_links(
+                                    base_url=url,
+                                    crawl_data=crawl_data,
+                                    db=self._db,
+                                    subdomain_id=sub.id,
+                                    config=self._config,
+                                )
+                    except ImportError:
+                        pass
+                    except Exception as exc:
+                        logger.debug("Broken link check failed for %s: %s", hostname, exc)
 
             except Exception as exc:
                 logger.warning("Website scan failed for %s: %s", raw_url, exc)

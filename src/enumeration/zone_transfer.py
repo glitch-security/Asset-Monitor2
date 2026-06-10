@@ -1,12 +1,15 @@
 """DNS zone transfer (AXFR) attempt for security assessment."""
 
+import logging
+
 import dns.asyncresolver
 import dns.exception
 import dns.query
 import dns.rdatatype
 import dns.resolver
 import dns.zone
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 async def attempt_zone_transfer(

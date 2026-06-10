@@ -78,6 +78,50 @@ class Base(DeclarativeBase):
 # ORM models
 # ---------------------------------------------------------------------------
 
+class Company(Base):
+    """A target company / bug-bounty programme that owns one or more domains."""
+
+    __tablename__ = "companies"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    name: str = Column(String(256), unique=True, nullable=False, index=True)
+    description: Optional[str] = Column(Text, nullable=True)
+    is_active: bool = Column(Boolean, default=True, nullable=False, index=True)
+    program_type: Optional[str] = Column(String(64), nullable=True)   # HackerOne / Bugcrowd / private …
+    program_url: Optional[str] = Column(String(512), nullable=True)
+    created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    domains: List["Domain"] = relationship(
+        "Domain", back_populates="company_ref", cascade="all, delete-orphan"
+    )
+    manual_ips: List["ManualIP"] = relationship(
+        "ManualIP", back_populates="company_ref", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Company id={self.id} name={self.name!r} active={self.is_active}>"
+
+
+class ManualIP(Base):
+    """An IP address manually added to a company's attack surface."""
+
+    __tablename__ = "manual_ips"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    company_id: int = Column(
+        Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ip_address: str = Column(String(45), nullable=False)   # IPv4 or IPv6
+    label: Optional[str] = Column(String(256), nullable=True)
+    notes: Optional[str] = Column(Text, nullable=True)
+    added_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    company_ref: "Company" = relationship("Company", back_populates="manual_ips")
+
+    def __repr__(self) -> str:
+        return f"<ManualIP id={self.id} ip={self.ip_address!r} company_id={self.company_id}>"
+
+
 class Domain(Base):
     """A root domain that is being monitored."""
 
@@ -92,10 +136,17 @@ class Domain(Base):
     profile_id: Optional[int] = Column(
         Integer, ForeignKey("scan_profiles.id", ondelete="SET NULL"), nullable=True
     )
+    # FK to owning company — nullable so existing domains without a company still work
+    company_id: Optional[int] = Column(
+        Integer, ForeignKey("companies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Scope boundary: "in_scope", "out_of_scope", "unknown"
+    scope_type: str = Column(String(32), default="unknown", nullable=False, index=True)
 
     subdomains: List["Subdomain"] = relationship(
         "Subdomain", back_populates="domain_ref", cascade="all, delete-orphan"
     )
+    company_ref: Optional["Company"] = relationship("Company", back_populates="domains")
 
     def __repr__(self) -> str:
         return f"<Domain id={self.id} domain={self.domain!r}>"
@@ -532,6 +583,18 @@ class DatabaseManager:
                         "REFERENCES scan_profiles(id) ON DELETE SET NULL"
                     )
                 )
+
+            # Add scope_type to domains if missing
+            rows = conn.execute(
+                __import__("sqlalchemy").text("PRAGMA table_info(domains)")
+            ).fetchall()
+            existing_cols = {r[1] for r in rows}
+            if "scope_type" not in existing_cols:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE domains ADD COLUMN scope_type VARCHAR(32) DEFAULT 'unknown' NOT NULL"
+                    )
+                )
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -625,6 +688,19 @@ class DatabaseManager:
             if obj is None:
                 return False
             obj.profile_id = profile_id
+            return True
+
+    def set_domain_scope(
+        self, domain_id: int, scope_type: str
+    ) -> bool:
+        """Set scope boundary for a domain. scope_type: in_scope, out_of_scope, unknown."""
+        if scope_type not in ("in_scope", "out_of_scope", "unknown"):
+            return False
+        with self.get_session() as session:
+            obj = session.get(Domain, domain_id)
+            if obj is None:
+                return False
+            obj.scope_type = scope_type
             return True
 
     def get_domain_details(self, domain_id: int) -> Optional[Dict[str, Any]]:
@@ -1298,6 +1374,7 @@ class DatabaseManager:
                     Domain.added_at,
                     Domain.last_scan,
                     Domain.profile_id,
+                    Domain.scope_type,
                     ScanProfile.name.label("profile_name"),
                     ScanProfile.settings.label("profile_settings"),
                     func.count(Subdomain.id).label("total_subs"),
@@ -1329,6 +1406,7 @@ class DatabaseManager:
                 "profile_id": r.profile_id,
                 "profile_name": r.profile_name,
                 "profile_mode": profile_mode,
+                "scope_type": r.scope_type,
                 "total_subs": r.total_subs or 0,
                 "live_subs": int(r.live_subs or 0),
             })

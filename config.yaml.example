@@ -74,6 +74,14 @@ enumeration:
     # Enumerate DNS records (A, AAAA, MX, NS, TXT, SOA, CNAME) for the apex domain.
     dns_records: true
 
+    # Discover cloud assets (S3 buckets, Firebase DBs, Azure blobs, GCP storage).
+    # Checks CNAME records, enumerates bucket names from domain permutations.
+    cloud_asset_discovery: true
+
+    # Run Google/GitHub/Pastebin dorking to find leaked secrets and sensitive files.
+    # Uses GitHub API if github_token is set in api_keys.
+    dorking: true
+
   # Path to the subdomain wordlist used during DNS bruteforce.
   # Default (243 entries): "./wordlists/subdomains.txt"
   # Extended (5 000 entries): "./wordlists/subdomains-5000.txt"
@@ -162,6 +170,37 @@ port_scanning:
 
 
 # -----------------------------------------------------------------------------
+# Attack surface scanning — directory brute-force, API discovery, broken links
+# -----------------------------------------------------------------------------
+attack_surface:
+  # Fuzz common web paths on live subdomains to discover hidden directories.
+  dir_bruteforce: true
+
+  # Discover API endpoints (REST, GraphQL, Swagger/OpenAPI, method fuzzing).
+  api_discovery: true
+
+  # Check external links on crawled pages for broken link hijacking.
+  broken_link_hijacking: true
+
+  # Concurrent requests for directory brute-force scanning.
+  dir_bruteforce_concurrency: 20
+
+  # Concurrent requests for API discovery scanning.
+  api_discovery_concurrency: 15
+
+
+# -----------------------------------------------------------------------------
+# Scope management — control which domains get scanned
+# -----------------------------------------------------------------------------
+scope:
+  # When true, domains marked as "out_of_scope" will be skipped during scans.
+  enforce_scope: false
+
+  # Default scope for newly added domains: "in_scope", "out_of_scope", "unknown"
+  default_scope: "unknown"
+
+
+# -----------------------------------------------------------------------------
 # Web dashboard — browser UI for monitoring status
 # -----------------------------------------------------------------------------
 web:
@@ -186,6 +225,10 @@ api_keys:
   # https://search.censys.io/account
   censys_id: ""
   censys_secret: ""
+
+  # GitHub personal access token — used for code search dorking.
+  # Create at: https://github.com/settings/tokens (needs repo scope)
+  github_token: ""
 
 
 # -----------------------------------------------------------------------------

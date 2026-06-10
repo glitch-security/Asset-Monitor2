@@ -601,13 +601,23 @@ def build_app(
             data = await request.json()
         except Exception:
             data = {}
-        if "profile_id" not in data:
-            raise HTTPException(status_code=400, detail="profile_id is required")
-        profile_id = data["profile_id"]
-        ok = db.set_domain_profile(domain_id, profile_id)
-        if not ok:
-            raise HTTPException(status_code=404, detail="Domain not found")
-        return {"updated": True, "domain_id": domain_id, "profile_id": profile_id}
+        updated_fields = []
+        if "profile_id" in data:
+            ok = db.set_domain_profile(domain_id, data["profile_id"])
+            if not ok:
+                raise HTTPException(status_code=404, detail="Domain not found")
+            updated_fields.append("profile_id")
+        if "scope_type" in data:
+            scope = data["scope_type"]
+            if scope not in ("in_scope", "out_of_scope", "unknown"):
+                raise HTTPException(status_code=400, detail="scope_type must be in_scope, out_of_scope, or unknown")
+            ok = db.set_domain_scope(domain_id, scope)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Domain not found")
+            updated_fields.append("scope_type")
+        if not updated_fields:
+            raise HTTPException(status_code=400, detail="profile_id or scope_type is required")
+        return {"updated": True, "domain_id": domain_id, "fields": updated_fields}
 
     @app.delete("/api/targets/domain/{domain_id}", dependencies=[Depends(_require_admin)])
     async def api_delete_domain(domain_id: int):
@@ -745,6 +755,85 @@ def build_app(
     @app.get("/api/scan/status")
     async def api_scan_status():
         return dict(_scan_state)
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — dorking / attack surface scan
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.post("/api/dorking/{domain}", dependencies=[Depends(_require_admin)])
+    async def api_run_dorking(domain: str, request: Request):
+        """Run dorking scan for a specific domain."""
+        if not _DOMAIN_RE.match(domain):
+            raise HTTPException(status_code=400, detail="Invalid domain name")
+        try:
+            from ..enumeration.dorking import run_dorking
+            gh_token = config.api_keys.github_token if hasattr(config.api_keys, 'github_token') else ""
+            findings = await run_dorking(domain, db, config, github_token=gh_token or None)
+            return {"domain": domain, "findings": len(findings), "results": findings}
+        except Exception as exc:
+            logger.error("api_run_dorking error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/cloud-assets/{domain}", dependencies=[Depends(_require_admin)])
+    async def api_run_cloud_discovery(domain: str, request: Request):
+        """Run cloud asset discovery for a specific domain."""
+        if not _DOMAIN_RE.match(domain):
+            raise HTTPException(status_code=400, detail="Invalid domain name")
+        try:
+            from ..enumeration.cloud_assets import discover_cloud_assets
+            dom = db.get_domain(domain)
+            sub_fqdns = []
+            if dom:
+                sub_fqdns = [s.fqdn for s in db.get_live_subdomains(dom.id)]
+            findings = await discover_cloud_assets(domain, sub_fqdns, db, config)
+            return {"domain": domain, "findings": len(findings), "results": findings}
+        except Exception as exc:
+            logger.error("api_run_cloud_discovery error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/dir-scan/{subdomain_id}", dependencies=[Depends(_require_admin)])
+    async def api_run_dir_scan(subdomain_id: int, request: Request):
+        """Run directory brute-force on a specific subdomain."""
+        try:
+            from sqlalchemy import select
+            from ..database import Subdomain
+            with db.get_session() as session_:
+                sub = session_.scalar(select(Subdomain).where(Subdomain.id == subdomain_id))
+                if not sub:
+                    raise HTTPException(status_code=404, detail="Subdomain not found")
+                fqdn = sub.fqdn
+                sid = sub.id
+            from ..scanning.dir_bruteforce import bruteforce_directories
+            base_url = f"https://{fqdn}"
+            findings = await bruteforce_directories(base_url, db, sid, config)
+            return {"subdomain": fqdn, "findings": len(findings), "results": findings}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_run_dir_scan error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/api-discovery/{subdomain_id}", dependencies=[Depends(_require_admin)])
+    async def api_run_api_discovery(subdomain_id: int, request: Request):
+        """Run API endpoint discovery on a specific subdomain."""
+        try:
+            from sqlalchemy import select
+            from ..database import Subdomain
+            with db.get_session() as session_:
+                sub = session_.scalar(select(Subdomain).where(Subdomain.id == subdomain_id))
+                if not sub:
+                    raise HTTPException(status_code=404, detail="Subdomain not found")
+                fqdn = sub.fqdn
+                sid = sub.id
+            from ..scanning.api_discovery import discover_api_endpoints
+            base_url = f"https://{fqdn}"
+            findings = await discover_api_endpoints(base_url, db, sid, config)
+            return {"subdomain": fqdn, "findings": len(findings), "results": findings}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_run_api_discovery error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
 
     # ────────────────────────────────────────────────────────────────────────
     # API — settings

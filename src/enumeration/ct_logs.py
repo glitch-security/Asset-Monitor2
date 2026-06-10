@@ -13,10 +13,12 @@ are missed regardless of how the CA encoded them.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Optional
 
 import httpx
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 _BASE = "https://crt.sh/"
 _MAX_RETRIES = 3

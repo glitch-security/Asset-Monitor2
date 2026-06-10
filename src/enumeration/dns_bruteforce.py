@@ -4,9 +4,12 @@ import asyncio
 import secrets
 from pathlib import Path
 
+import logging
+
 import dns.asyncresolver
 import dns.exception
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 async def _resolve_fqdn(

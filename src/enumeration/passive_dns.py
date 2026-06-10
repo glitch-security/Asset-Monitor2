@@ -2,9 +2,12 @@
 
 from typing import Optional
 
+import logging
+
 import httpx
 from bs4 import BeautifulSoup
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 def _filter_by_domain(names: set[str], domain: str) -> set[str]:

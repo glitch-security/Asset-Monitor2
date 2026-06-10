@@ -146,8 +146,20 @@ async def check_security_files(
             if response.status_code not in (200, 401, 403):
                 continue
 
-            # For 401/403, still flag the existence of the resource
             body_text = response.text
+
+            # Skip 403s that are generic CDN/WAF block pages — not real findings.
+            # These fire on every path when Akamai, Cloudflare, etc. block the IP.
+            if response.status_code == 403:
+                lower_body = body_text.lower()
+                if any(pat in lower_body for pat in (
+                    "akamai", "edgesuite.net", "reference #",
+                    "access denied</title>", "cloudflare", "ray id",
+                    "please enable cookies", "ddos protection",
+                    "you don't have permission to access",
+                )):
+                    continue
+
             preview = body_text[:_PREVIEW_BYTES]
             severity = _classify_severity(path)
 

@@ -29,7 +29,40 @@ logger = logging.getLogger(__name__)
 
 _SCREENSHOT_DIR = "data/screenshots"
 # Playwright timeout for page load (ms)
-_SCREENSHOT_TIMEOUT_MS = 30_000
+_SCREENSHOT_TIMEOUT_MS = 45_000
+
+_BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36"
+)
+
+_BROWSER_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Cache-Control": "max-age=0",
+}
+
+# Injected into every page to suppress automation fingerprints
+_STEALTH_SCRIPT = """
+Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+window.chrome = {runtime: {}, loadTimes: () => {}, csi: () => {}, app: {}};
+"""
 
 
 def screenshot_path_for_url(url: str) -> str:
@@ -237,28 +270,36 @@ async def _take_screenshot(url: str, timeout: int = 15) -> Optional[str]:
                     "--disable-setuid-sandbox",
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
-                    "--disable-extensions",
-                    "--disable-background-networking",
+                    "--disable-blink-features=AutomationControlled",
+                    "--window-size=1920,1080",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-infobars",
                 ],
             )
             ctx = await browser.new_context(
-                viewport={"width": 1280, "height": 800},
+                viewport={"width": 1920, "height": 1080},
+                screen={"width": 1920, "height": 1080},
                 ignore_https_errors=True,
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
+                user_agent=_BROWSER_UA,
+                locale="en-US",
+                timezone_id="America/New_York",
+                extra_http_headers=_BROWSER_HEADERS,
             )
+            await ctx.add_init_script(_STEALTH_SCRIPT)
             page = await ctx.new_page()
             try:
                 await page.goto(
                     url,
                     timeout=max(_SCREENSHOT_TIMEOUT_MS, timeout * 1000),
-                    wait_until="domcontentloaded",
+                    wait_until="load",
                 )
-                # Brief settle to let critical CSS render
-                await page.wait_for_timeout(800)
+                # Wait for network activity to settle (dynamic SPAs / lazy loads)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=8000)
+                except Exception:
+                    pass  # long-poll connections keep network busy — that's fine
+                await page.wait_for_timeout(2000)
                 await page.screenshot(path=path, full_page=False)
                 logger.info("Screenshot saved: %s → %s", url, path)
                 return path

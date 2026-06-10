@@ -237,8 +237,14 @@
       <span id="dd-profile-badge" class="ms-2"></span>
     </div>
     <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-info" style="font-size:.75rem;color:#5eadff;border-color:rgba(56,139,253,.3);" onclick="runDorking(_ddDomainName)">
+        <i class="bi bi-search"></i> Dork
+      </button>
+      <button class="btn btn-sm btn-outline-info" style="font-size:.75rem;color:#5eadff;border-color:rgba(56,139,253,.3);" onclick="runCloudDiscovery(_ddDomainName)">
+        <i class="bi bi-cloud"></i> Cloud
+      </button>
       <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="openAssignProfileModal(_ddDomainId)">
-        <i class="bi bi-sliders2"></i> Change Profile
+        <i class="bi bi-sliders2"></i> Profile
       </button>
       <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="triggerDomainScan(_ddDomainName)">
         <i class="bi bi-play-circle"></i> Scan Now
@@ -277,8 +283,8 @@
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-hover mb-0">
-              <thead><tr><th>FQDN</th><th>Status</th><th>HTTP</th><th>IP</th><th>Open Ports</th><th>Technologies</th><th>Last Seen</th></tr></thead>
-              <tbody id="dd-subs-body"><tr><td colspan="7" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+              <thead><tr><th>FQDN</th><th>Status</th><th>HTTP</th><th>IP</th><th>Open Ports</th><th>Technologies</th><th>Last Seen</th><th>Actions</th></tr></thead>
+              <tbody id="dd-subs-body"><tr><td colspan="8" class="text-center text-muted py-4">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -883,6 +889,11 @@
                 <label class="form-label">CENSYS SECRET</label>
                 <input type="password" class="form-control form-control-sm" id="cfg-censys-secret" placeholder="API secret">
               </div>
+              <div class="col-sm-6">
+                <label class="form-label">GITHUB TOKEN</label>
+                <input type="password" class="form-control form-control-sm" id="cfg-github-token" placeholder="ghp_... (for dorking/code search)">
+                <div class="form-text">Used for GitHub code search dorking. Create a PAT at github.com/settings/tokens</div>
+              </div>
             </div>
           </div>
 
@@ -1255,6 +1266,9 @@ function eventDeepLink(e) {
   if (t === 'CONTENT_CHANGE' || t === 'DOM_CHANGE' || t === 'ENDPOINT_NEW' || t === 'ENDPOINT_REMOVED') {
     return `<span class="event-deeplink" onclick="gotoSubdomain('${esc(e.target)}')" title="Jump to Subdomains">→ Subs</span>`;
   }
+  if (t && (t.startsWith('CLOUD_ASSET') || t === 'DORK_LEAK_FOUND' || t === 'DORK_SCAN_COMPLETE' || t === 'SENSITIVE_PATH_FOUND' || t === 'API_ENDPOINT_FOUND' || t === 'BROKEN_LINK_HIJACK' || t === 'SECURITY_FILE_FOUND')) {
+    return `<span class="event-deeplink" onclick="showTabByName('changes');return false;" title="View in Change Events">→ Events</span>`;
+  }
   return '';
 }
 
@@ -1394,9 +1408,14 @@ function renderTargets() {
       ? `<span style="font-size:.75rem;">${fmtDate(d.last_scan)}</span>`
       : '<span class="text-muted" style="font-size:.75rem;">Never</span>';
     const profBadge = profileBadge(d.profile_mode, d.profile_name);
+    const scopeColors = {in_scope:'var(--green)',out_of_scope:'var(--red)',unknown:'var(--text4)'};
+    const scopeLabels = {in_scope:'In Scope',out_of_scope:'Out of Scope',unknown:'Unknown'};
+    const scope = d.scope_type || 'unknown';
+    const scopeBadge = `<span style="font-size:.6rem;background:rgba(255,255,255,.04);color:${scopeColors[scope]||scopeColors.unknown};border:1px solid rgba(255,255,255,.1);padding:1px 5px;border-radius:3px;cursor:pointer;" onclick="cycleScope(${d.id},'${scope}')" title="Click to change scope">${scopeLabels[scope]||scope}</span>`;
     return `<tr>
       <td>
         <span class="badge bg-secondary me-1" style="font-size:.6rem;">Domain</span>
+        ${scopeBadge}
         <a href="#" onclick="openDomainDetail(${d.id},'${esc(d.domain)}');return false;" style="color:var(--accent);text-decoration:none;">
           <code style="font-size:.85rem;">${esc(d.domain)}</code>
         </a>
@@ -1412,6 +1431,12 @@ function renderTargets() {
         </button>
         <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="openAssignProfileModal(${d.id})" title="Change profile">
           <i class="bi bi-sliders2"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-info me-1" style="font-size:.7rem;padding:2px 6px;color:#5eadff;border-color:rgba(56,139,253,.3);" onclick="runDorking('${esc(d.domain)}')" title="Run dorking">
+          <i class="bi bi-search"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-info me-1" style="font-size:.7rem;padding:2px 6px;color:#5eadff;border-color:rgba(56,139,253,.3);" onclick="runCloudDiscovery('${esc(d.domain)}')" title="Cloud asset discovery">
+          <i class="bi bi-cloud"></i>
         </button>
         <button class="btn btn-xs btn-outline-primary me-1" style="font-size:.7rem;padding:2px 8px;" onclick="triggerDomainScan('${esc(d.domain)}')">
           <i class="bi bi-play-fill"></i> Scan
@@ -1532,7 +1557,7 @@ function renderDetailSubs() {
   if (statusFilter) rows = rows.filter(s => s.status === statusFilter);
   if (textFilter)   rows = rows.filter(s => s.fqdn.toLowerCase().includes(textFilter));
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No subdomains.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No subdomains.</td></tr>';
     return;
   }
   tbody.innerHTML = rows.map(s => {
@@ -1545,6 +1570,10 @@ function renderDetailSubs() {
     const ports = (s.open_ports||[]).slice(0,8).map(p => portBadge(p.port, p.service)).join('');
     const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
     const ips = (s.ip_addresses||[]).slice(0,2).map(ip => `<code style="font-size:.72rem;color:var(--text3);">${esc(ip)}</code>`).join(' ');
+    const actionBtns = s.status === 'alive' ? `
+      <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.65rem;padding:1px 5px;" onclick="runDirScan(${s.id},'${esc(s.fqdn)}')" title="Directory brute-force"><i class="bi bi-folder2-open"></i></button>
+      <button class="btn btn-xs btn-outline-secondary" style="font-size:.65rem;padding:1px 5px;" onclick="runApiDiscovery(${s.id},'${esc(s.fqdn)}')" title="API discovery"><i class="bi bi-plug"></i></button>
+    ` : '';
     return `<tr>
       <td><code style="color:var(--accent);font-size:.8rem;">${esc(s.fqdn)}</code>${newTag}</td>
       <td>${statusDot(s.status)}</td>
@@ -1553,6 +1582,7 @@ function renderDetailSubs() {
       <td>${ports || '<span class="text-muted">—</span>'}</td>
       <td>${techs || '<span class="text-muted">—</span>'}</td>
       <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
+      <td>${actionBtns}</td>
     </tr>`;
   }).join('');
 }
@@ -1998,6 +2028,7 @@ async function openSettings() {
   _setVal('cfg-shodan-key',    '');
   _setVal('cfg-censys-id',     '');
   _setVal('cfg-censys-secret', '');
+  _setVal('cfg-github-token',  '');
 
   document.getElementById('settings-status').textContent = '';
   document.getElementById('create-user-form').classList.add('d-none');
@@ -2052,10 +2083,10 @@ async function saveSettings() {
   };
 
   // Only include API keys if the field was filled in
-  ['vt-key','st-key','shodan-key','censys-id','censys-secret'].forEach((id, i) => {
+  ['vt-key','st-key','shodan-key','censys-id','censys-secret','github-token'].forEach((id, i) => {
     const v = _strVal('cfg-' + id);
     if (v) {
-      const keyMap = {'vt-key':'virustotal','st-key':'securitytrails','shodan-key':'shodan','censys-id':'censys_id','censys-secret':'censys_secret'};
+      const keyMap = {'vt-key':'virustotal','st-key':'securitytrails','shodan-key':'shodan','censys-id':'censys_id','censys-secret':'censys_secret','github-token':'github_token'};
       payload.api_keys[keyMap[id]] = v;
     }
   });
@@ -2185,6 +2216,73 @@ async function loadSession() {
 // ── Live filter bindings ─────────────────────────────────────────────────────
 document.getElementById('filter-subs-text').addEventListener('input', renderSubdomains);
 document.getElementById('filter-target').addEventListener('input', renderChanges);
+
+// ── Scope management ────────────────────────────────────────────────────────
+async function cycleScope(domainId, currentScope) {
+  const order = ['unknown', 'in_scope', 'out_of_scope'];
+  const idx = order.indexOf(currentScope);
+  const next = order[(idx + 1) % order.length];
+  const labels = {in_scope:'In Scope', out_of_scope:'Out of Scope', unknown:'Unknown'};
+  try {
+    const r = await _mfetch(`/api/targets/domain/${domainId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({scope_type: next}),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showToast(`Scope set to ${labels[next]}`, 'success');
+    await loadTargets();
+  } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
+}
+
+// ── Dorking ─────────────────────────────────────────────────────────────────
+async function runDorking(domain) {
+  showToast(`Running dorking for ${domain}…`, 'info');
+  try {
+    const r = await _mfetch(`/api/dorking/${encodeURIComponent(domain)}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    const n = d.findings || 0;
+    showToast(`Dorking complete for ${domain}: ${n} finding(s)`, n > 0 ? 'warning' : 'success');
+    await loadChanges();
+  } catch(e) { showToast('Dorking failed: ' + e.message, 'danger'); }
+}
+
+// ── Cloud asset discovery ───────────────────────────────────────────────────
+async function runCloudDiscovery(domain) {
+  showToast(`Discovering cloud assets for ${domain}…`, 'info');
+  try {
+    const r = await _mfetch(`/api/cloud-assets/${encodeURIComponent(domain)}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    const n = d.findings || 0;
+    showToast(`Cloud discovery for ${domain}: ${n} asset(s) found`, n > 0 ? 'warning' : 'success');
+    await loadChanges();
+  } catch(e) { showToast('Cloud discovery failed: ' + e.message, 'danger'); }
+}
+
+// ── Dir brute-force on subdomain ────────────────────────────────────────────
+async function runDirScan(subdomainId, fqdn) {
+  showToast(`Running directory brute-force on ${fqdn}…`, 'info');
+  try {
+    const r = await _mfetch(`/api/dir-scan/${subdomainId}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    showToast(`Dir scan on ${fqdn}: ${d.findings} path(s) found`, d.findings > 0 ? 'warning' : 'success');
+    await loadChanges();
+  } catch(e) { showToast('Dir scan failed: ' + e.message, 'danger'); }
+}
+
+// ── API discovery on subdomain ──────────────────────────────────────────────
+async function runApiDiscovery(subdomainId, fqdn) {
+  showToast(`Running API discovery on ${fqdn}…`, 'info');
+  try {
+    const r = await _mfetch(`/api/api-discovery/${subdomainId}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+    showToast(`API discovery on ${fqdn}: ${d.findings} endpoint(s) found`, d.findings > 0 ? 'warning' : 'success');
+    await loadChanges();
+  } catch(e) { showToast('API discovery failed: ' + e.message, 'danger'); }
+}
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 loadSession();

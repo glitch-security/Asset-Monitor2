@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING
 
-from loguru import logger
+logger = logging.getLogger(__name__)
 
 from .ct_logs import enumerate_ct_logs
 from .dns_bruteforce import bruteforce_dns

@@ -1,11 +1,13 @@
 """JavaScript file analysis for subdomain discovery."""
 
+import logging
 import re
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 def _build_patterns(domain: str) -> list[re.Pattern]:

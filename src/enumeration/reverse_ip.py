@@ -2,12 +2,14 @@
 
 import asyncio
 import ipaddress
+import logging
 from typing import Optional
 
 import dns.asyncresolver
 import dns.exception
 import httpx
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Known CDN CIDR blocks (Cloudflare, Akamai, Fastly, AWS CloudFront)

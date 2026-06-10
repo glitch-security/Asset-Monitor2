@@ -3,8 +3,11 @@
 import json
 from urllib.parse import urlparse
 
+import logging
+
 import httpx
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 async def enumerate_wayback(domain: str, timeout: int = 30) -> set[str]:

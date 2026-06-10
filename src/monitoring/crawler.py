@@ -20,8 +20,29 @@ from bs4 import BeautifulSoup
 logger = logging.getLogger(__name__)
 
 _DEFAULT_UA = (
-    "Mozilla/5.0 (compatible; AssetMonitor/1.0; +https://github.com/asset-monitor)"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36"
 )
+
+_BROWSER_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,"
+        "application/signed-exchange;v=b3;q=0.7"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "sec-ch-ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Cache-Control": "max-age=0",
+}
 
 
 class BFSCrawler:
@@ -103,8 +124,8 @@ class BFSCrawler:
             verify=self.verify_ssl,
             timeout=httpx.Timeout(self.timeout),
             follow_redirects=True,
-            max_redirects=5,
-            headers={"User-Agent": self.user_agent},
+            max_redirects=10,
+            headers={**_BROWSER_HEADERS, "User-Agent": self.user_agent},
         ) as client:
             while not queue.empty() and len(pages) < self.max_pages:
                 url, depth = await queue.get()

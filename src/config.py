@@ -23,7 +23,9 @@ class ScanConfig(BaseModel):
     concurrent_threads: int = 10
     request_timeout_seconds: int = 10
     user_agent: str = (
-        "Mozilla/5.0 (compatible; AssetMonitor/1.0; +https://github.com/asset-monitor)"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
     )
     respect_robots_txt: bool = False
     max_crawl_depth: int = 3
@@ -48,6 +50,8 @@ class EnumerationTechniques(BaseModel):
     js_analysis: bool = True
     zone_transfer: bool = True
     reverse_ip: bool = True
+    cloud_asset_discovery: bool = True
+    dorking: bool = True
 
 
 class EnumerationConfig(BaseModel):
@@ -106,6 +110,7 @@ class ApiKeysConfig(BaseModel):
     shodan: str = ""
     censys_id: str = ""
     censys_secret: str = ""
+    github_token: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +171,23 @@ class PortScanConfig(BaseModel):
     max_concurrent: int = 5
 
 
+class AttackSurfaceConfig(BaseModel):
+    """Config for directory brute-force, API discovery, and related features."""
+    dir_bruteforce: bool = True
+    api_discovery: bool = True
+    broken_link_hijacking: bool = True
+    dir_bruteforce_concurrency: int = 20
+    api_discovery_concurrency: int = 15
+
+
+class ScopeConfig(BaseModel):
+    """Scope boundary configuration."""
+    # When True, only scan domains explicitly marked as in_scope
+    enforce_scope: bool = False
+    # Default scope for new domains: "in_scope", "out_of_scope", "unknown"
+    default_scope: str = "unknown"
+
+
 class WebConfig(BaseModel):
     enabled: bool = True
     host: str = "0.0.0.0"
@@ -191,6 +213,8 @@ class AppConfig(BaseModel):
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     monitoring: MonitoringConfig = Field(default_factory=MonitoringConfig)
     port_scanning: PortScanConfig = Field(default_factory=PortScanConfig)
+    attack_surface: AttackSurfaceConfig = Field(default_factory=AttackSurfaceConfig)
+    scope: ScopeConfig = Field(default_factory=ScopeConfig)
     web: WebConfig = Field(default_factory=WebConfig)
     api_keys: ApiKeysConfig = Field(default_factory=ApiKeysConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
