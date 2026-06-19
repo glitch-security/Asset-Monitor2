@@ -7,6 +7,8 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
 
 # ----- Python bytecode -----
 *.pyc
@@ -23,7 +25,7 @@ build/
 venv/
 env/
 ENV/
-.env/
+.env.*/
 
 # ----- Environment / secrets -----
 .env
@@ -31,6 +33,12 @@ ENV/
 *.env
 secrets.yaml
 secrets.yml
+secrets.json
+credentials.json
+*.key
+*.pem
+*.p12
+*.pfx
 
 # ----- User-specific config & target files -----
 # (kept out of version control; copy from *.example to get started)
@@ -38,9 +46,6 @@ config.yaml
 domains.txt
 subdomains.txt
 websites.txt
-data/domains.txt
-data/subdomains.txt
-data/websites.txt
 
 # ----- Generated reports -----
 report.json
@@ -49,35 +54,84 @@ reports/
 
 # ----- Screenshots -----
 screenshots/
-*.png
-*.jpg
-*.jpeg
+screenshots/*.png
+screenshots/*.jpg
 
 # ----- OS noise -----
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 desktop.ini
 
 # ----- Editor / IDE -----
 .idea/
+.idea
 .vscode/
+.cursor/
+.claude/
+.aider/
+.continue/
+.copilot/
 *.swp
 *.swo
 *~
+*.orig
+*.bak
+.project
+.classpath
+.settings/
+*.iml
+*.sublime-workspace
+*.sublime-project
+
+# ----- AI / Agent tools -----
+.claude/
+.cursor/
+.aider/
+.aider.tags.cache.v3/
+.aider.chat.history.md
+.continue/
+.copilot/
+copilot-instructions.md
+*.ai-notes.md
+ai-context/
+llm-context/
+agent-scratchpad/
+CLAUDE.md
+CODEBASE.md
+instructions.md
+*_MEMORY.md
+*_INTERNAL.md
+*_INSTRUCTIONS.md
 
 # ----- Pytest / coverage -----
 .pytest_cache/
 .coverage
-htmlcov/
 coverage.xml
+htmlcov/
+tests/results.md
 
 # ----- mypy / pyright -----
 .mypy_cache/
 .pyright/
+.pytest_cache/
 
-# ----- Agent-internal / operational docs (not for public repo) -----
-CODEBASE.md
-CLAUDE.md
-instructions.md
-*_MEMORY.md
-*_INTERNAL.md
+# ----- Logs -----
+*.log
+logs/
+*.log.*
+
+# ----- Temporary files -----
+*.tmp
+*.temp
+tmp/
+temp/
+
+# ----- Build artifacts -----
+*.so
+*.dylib
+*.dll
