@@ -514,9 +514,38 @@ def daemon(ctx: click.Context) -> None:
         f"(interval={config.scan.interval_minutes}m)"
     )
     if config.web.enabled:
+        protocol = "https" if config.web.ssl_enabled else "http"
         console.print(
-            f"[bold cyan]Dashboard:[/bold cyan] http://{config.web.host}:{config.web.port}"
+            f"[bold cyan]Dashboard:[/bold cyan] {protocol}://{config.web.host}:{config.web.port}"
         )
+        if config.web.ssl_enabled:
+            console.print(
+                f"[dim]  SSL/TLS enabled (cert: {config.web.ssl_cert_path})[/dim]"
+            )
+
+    # Build uvicorn SSL configuration
+    ssl_config = None
+    if config.web.ssl_enabled:
+        if not config.web.ssl_cert_path or not config.web.ssl_key_path:
+            console.print("[bold red]SSL enabled but cert_path or key_path not set![/bold red]")
+            console.print("Set web.ssl_cert_path and web.ssl_key_path in config.yaml")
+            sys.exit(1)
+
+        import ssl
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(
+            certfile=config.web.ssl_cert_path,
+            keyfile=config.web.ssl_key_path,
+            password=None,
+        )
+
+        # Load CA for client verification if configured
+        if config.web.ssl_verify_clients and config.web.ssl_ca_path:
+            context.verify_mode = ssl.CERT_REQUIRED
+            context.load_verify_locations(cafile=config.web.ssl_ca_path)
+            console.print("[dim]  Client certificate verification enabled[/dim]")
+
+        ssl_config = context
 
     uvicorn.run(
         app,
@@ -524,4 +553,5 @@ def daemon(ctx: click.Context) -> None:
         port=config.web.port if config.web.enabled else 5000,
         log_level="warning",
         access_log=False,
+        ssl=ssl_config,
     )

@@ -208,6 +208,13 @@ web:
   host: "0.0.0.0"   # bind address inside the container / local Python run
   port: 5000         # mapped to host via docker-compose ports section
 
+  # SSL/TLS configuration for HTTPS
+  ssl_enabled: false                      # Set to true to enable HTTPS
+  ssl_cert_path: "/path/to/cert.pem"     # Path to SSL certificate (public)
+  ssl_key_path: "/path/to/key.pem"       # Path to SSL private key
+  ssl_ca_path: ""                        # Optional CA bundle for client cert verification
+  ssl_verify_clients: false              # Set to true to require client certificates
+
 
 # -----------------------------------------------------------------------------
 # API keys — third-party data enrichment sources

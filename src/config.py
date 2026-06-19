@@ -196,6 +196,12 @@ class WebConfig(BaseModel):
     enabled: bool = True
     host: str = "0.0.0.0"
     port: int = 5000
+    # SSL/TLS configuration
+    ssl_enabled: bool = False
+    ssl_cert_path: str = ""
+    ssl_key_path: str = ""
+    ssl_ca_path: str = ""  # Optional CA bundle for client verification
+    ssl_verify_clients: bool = False  # Require client certificates
 
 
 class NotificationsConfig(BaseModel):
