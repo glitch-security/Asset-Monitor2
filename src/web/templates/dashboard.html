@@ -265,6 +265,7 @@
     <ul class="nav sub-tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
       <li class="nav-item"><a class="nav-link active" data-dtab="dd-subs" href="#" onclick="showDetailTab('dd-subs',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="dd-tab-badge-subs">0</span></a></li>
       <li class="nav-item"><a class="nav-link" data-dtab="dd-ports" href="#" onclick="showDetailTab('dd-ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="dd-tab-badge-ports">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-dtab="dd-dnssec" href="#" onclick="showDetailTab('dd-dnssec',this);return false;"><i class="bi bi-shield-check"></i> DNS Security <span class="badge bg-secondary ms-1" id="dd-tab-badge-dnssec">0</span></a></li>
       <li class="nav-item"><a class="nav-link" data-dtab="dd-changes" href="#" onclick="showDetailTab('dd-changes',this);return false;"><i class="bi bi-activity"></i> Changes (7d) <span class="badge bg-secondary ms-1" id="dd-tab-badge-changes">0</span></a></li>
     </ul>
 
@@ -300,6 +301,35 @@
             <table class="table table-hover mb-0">
               <thead><tr><th>Host</th><th>Status</th><th>Open Ports</th><th>Scan Duration</th><th>Scanned At</th></tr></thead>
               <tbody id="dd-ports-body"><tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: DNS Security -->
+    <div id="dd-tab-dd-dnssec" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-shield-check"></i> DNS Security Analysis</span>
+          <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="loadDnsSecurityData()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height:600px;overflow-y:auto;">
+            <table class="table table-hover mb-0" style="font-size:.78rem;">
+              <thead>
+                <tr>
+                  <th>Subdomain</th>
+                  <th>Status</th>
+                  <th>DNSSEC</th>
+                  <th>Email Security</th>
+                  <th>Nameserver Security</th>
+                  <th>Scanned At</th>
+                </tr>
+              </thead>
+              <tbody id="dd-dnssec-body"><tr><td colspan="6" class="text-center text-muted py-4">Loading...</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -350,6 +380,7 @@
   <!-- Tabs -->
   <ul class="nav tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
     <li class="nav-item"><a class="nav-link active" data-tab="targets" href="#" onclick="showTab('targets',this);return false;"><i class="bi bi-crosshair"></i> Targets <span class="badge bg-secondary ms-1" id="tab-badge-targets">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="projects" href="#" onclick="showTab('projects',this);return false;"><i class="bi bi-building"></i> Projects <span class="badge bg-secondary ms-1" id="tab-badge-projects">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="profiles" href="#" onclick="showTab('profiles',this);return false;"><i class="bi bi-sliders2"></i> Profiles <span class="badge bg-secondary ms-1" id="tab-badge-profiles">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="subdomains" href="#" onclick="showTab('subdomains',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="tab-badge-subs">0</span></a></li>
@@ -384,6 +415,38 @@
               <th>Actions</th>
             </tr></thead>
             <tbody id="targets-body">
+              <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Projects -->
+  <div id="tab-projects" class="d-none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <span style="font-size:.8rem;color:var(--text3);">Organize your targets by company/project. Add mobile apps and API assets to each project.</span>
+      <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+        <i class="bi bi-plus-lg"></i> New Project
+      </button>
+    </div>
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Domains</th>
+                <th>Mobile Apps</th>
+                <th>API Assets</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="projects-body">
               <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
             </tbody>
           </table>
@@ -748,6 +811,56 @@
   </div>
 </div>
 
+<!-- Create / Edit Project Modal -->
+<div class="modal fade" id="projectModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dark">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="project-modal-title"><i class="bi bi-building"></i> New Project</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">COMPANY / PROJECT NAME *</label>
+            <input type="text" class="form-control" id="pj-name" placeholder="e.g. Acme Corporation" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">DESCRIPTION</label>
+            <input type="text" class="form-control" id="pj-description" placeholder="Brief description of the project">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">PROGRAM TYPE</label>
+            <select class="form-select" id="pj-program-type">
+              <option value="">Private / Internal</option>
+              <option value="hackerone">HackerOne</option>
+              <option value="bugcrowd">Bugcrowd</option>
+              <option value="intigriti">Intigriti</option>
+              <option value="synack">Synack</option>
+              <option value="yeswehack">YesWeHack</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">PROGRAM URL</label>
+            <input type="url" class="form-control" id="pj-program-url" placeholder="https://">
+          </div>
+          <div class="col-12">
+            <label class="form-label">NOTES</label>
+            <textarea class="form-control" id="pj-notes" rows="4" placeholder="Project notes, scope details, contacts, out-of-scope items..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="submitProject()">
+          <i class="bi bi-check-lg"></i> Save Project
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <!-- SETTINGS MODAL                                                         -->
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
@@ -1059,6 +1172,14 @@ function showTab(name, el) {
   const panel = document.getElementById('tab-' + name);
   if (panel) panel.classList.remove('d-none');
   el.classList.add('active');
+
+  // Load data for specific tabs
+  if (name === 'ports') loadPorts();
+  else if (name === 'subdomains') loadSubdomains();
+  else if (name === 'headers') loadHeaders();
+  else if (name === 'changes') loadChanges();
+  else if (name === 'profiles') loadProfiles();
+  else if (name === 'projects') loadProjects();
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────
@@ -1626,6 +1747,74 @@ function renderDetailChanges() {
       <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
     </tr>`;
   }).join('');
+}
+
+async function loadDnsSecurityData() {
+  if (!_currentDetailDomainId) return;
+  try {
+    const tbody = document.getElementById('dd-dnssec-body');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
+
+    const r = await fetch(`/api/domains/${_currentDetailDomainId}/dns-security`);
+    const data = await r.json();
+
+    if (r.ok) {
+      document.getElementById('dd-tab-badge-dnssec').textContent = data.length;
+
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No DNS security data available yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = data.map(d => {
+        // DNSSEC status badge
+        let dnssecBadge = '<span class="badge bg-secondary">N/A</span>';
+        if (d.dnssec_info) {
+          if (d.dnssec_info.dnssec_enabled) {
+            dnssecBadge = '<span class="badge bg-success">Enabled</span>';
+          } else {
+            dnssecBadge = '<span class="badge bg-danger">Disabled</span>';
+          }
+        }
+
+        // Email security score badge
+        let emailBadge = '<span class="badge bg-secondary">N/A</span>';
+        if (d.email_security) {
+          const score = d.email_security.overall_score || 0;
+          let grade = 'F';
+          let color = 'danger';
+          if (score >= 90) { grade = 'A'; color = 'success'; }
+          else if (score >= 75) { grade = 'B'; color = 'info'; }
+          else if (score >= 60) { grade = 'C'; color = 'warning'; }
+          else if (score >= 40) { grade = 'D'; color = 'warning'; }
+          emailBadge = `<span class="badge bg-${color}">${grade} (${score}/100)</span>`;
+        }
+
+        // Nameserver security status
+        let nsBadge = '<span class="badge bg-secondary">N/A</span>';
+        if (d.nameserver_security) {
+          const issues = (d.nameserver_security.issues || []).length;
+          if (issues > 0) {
+            nsBadge = `<span class="badge bg-danger">${issues} Issue${issues > 1 ? 's' : ''}</span>`;
+          } else {
+            nsBadge = '<span class="badge bg-success">Secure</span>';
+          }
+        }
+
+        return `<tr>
+          <td><code style="color:var(--accent);font-size:.75rem;">${esc(d.fqdn)}</code></td>
+          <td>${statusDot(d.status, d.status)}</td>
+          <td>${dnssecBadge}</td>
+          <td>${emailBadge}</td>
+          <td>${nsBadge}</td>
+          <td class="text-muted" style="font-size:.75rem;">${d.scanned_at ? fmtDate(d.scanned_at) : 'Never'}</td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    console.error('dns-security', e);
+    document.getElementById('dd-dnssec-body').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">Failed to load DNS security data.</td></tr>';
+  }
 }
 
 // ── Assign Profile Modal ──────────────────────────────────────────────────────
@@ -2282,6 +2471,152 @@ async function runApiDiscovery(subdomainId, fqdn) {
     showToast(`API discovery on ${fqdn}: ${d.findings} endpoint(s) found`, d.findings > 0 ? 'warning' : 'success');
     await loadChanges();
   } catch(e) { showToast('API discovery failed: ' + e.message, 'danger'); }
+}
+
+// ── Projects ───────────────────────────────────────────────────────────────────
+let _projectModal = null;
+let _editingProjectId = null;
+
+async function loadProjects() {
+  try {
+    const r = await _mfetch('/api/projects');
+    const projects = await r.json();
+    const tbody = document.getElementById('projects-body');
+    tbody.innerHTML = '';
+    document.getElementById('tab-badge-projects').textContent = projects.length;
+
+    if (projects.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">
+        <i class="bi bi-inbox"></i><br><small>No projects yet. Click "New Project" to create one.</small>
+      </td></tr>`;
+      return;
+    }
+
+    projects.forEach(p => {
+      const row = document.createElement('tr');
+      const programBadge = p.program_type
+        ? `<span class="badge bg-info">${escapeHtml(p.program_type)}</span>`
+        : '<span class="text-muted">Private</span>';
+      const statusBadge = p.is_active
+        ? '<span class="badge bg-success">Active</span>'
+        : '<span class="badge bg-secondary">Inactive</span>';
+
+      row.innerHTML = `
+        <td>
+          <div class="fw-bold">${escapeHtml(p.name)}</div>
+          ${p.description ? `<small class="text-muted">${escapeHtml(p.description)}</small>` : ''}
+        </td>
+        <td>${programBadge}</td>
+        <td>${p.stats.domains || 0}</td>
+        <td>${p.stats.mobile_apps || 0}</td>
+        <td>${p.stats.api_assets || 0}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-primary" onclick="editProject(${p.id})" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </button>
+            <button class="btn btn-outline-info" onclick="viewProjectDetails(${p.id})" title="Details">
+              <i class="bi bi-list-ul"></i>
+            </button>
+            <button class="btn btn-outline-danger" onclick="deleteProject(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}')" title="Delete">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+  } catch(e) {
+    console.error('projects', e);
+    showToast('Failed to load projects: ' + e.message, 'danger');
+  }
+}
+
+function showCreateProjectModal() {
+  _editingProjectId = null;
+  document.getElementById('project-modal-title').innerHTML = '<i class="bi bi-building"></i> New Project';
+  document.getElementById('pj-name').value = '';
+  document.getElementById('pj-description').value = '';
+  document.getElementById('pj-program-type').value = '';
+  document.getElementById('pj-program-url').value = '';
+  document.getElementById('pj-notes').value = '';
+  if (!_projectModal) _projectModal = new bootstrap.Modal(document.getElementById('projectModal'));
+  _projectModal.show();
+}
+
+async function editProject(id) {
+  try {
+    const r = await _mfetch(`/api/projects/${id}`);
+    const p = await r.json();
+    _editingProjectId = id;
+    document.getElementById('project-modal-title').innerHTML = '<i class="bi bi-building"></i> Edit Project';
+    document.getElementById('pj-name').value = p.name || '';
+    document.getElementById('pj-description').value = p.description || '';
+    document.getElementById('pj-program-type').value = p.program_type || '';
+    document.getElementById('pj-program-url').value = p.program_url || '';
+    document.getElementById('pj-notes').value = p.notes || '';
+    if (!_projectModal) _projectModal = new bootstrap.Modal(document.getElementById('projectModal'));
+    _projectModal.show();
+  } catch(e) {
+    showToast('Failed to load project: ' + e.message, 'danger');
+  }
+}
+
+async function submitProject() {
+  const name = document.getElementById('pj-name').value.trim();
+  const description = document.getElementById('pj-description').value.trim();
+  const programType = document.getElementById('pj-program-type').value;
+  const programUrl = document.getElementById('pj-program-url').value.trim();
+  const notes = document.getElementById('pj-notes').value.trim();
+
+  if (!name) {
+    showToast('Project name is required', 'warning');
+    return;
+  }
+
+  const data = {
+    name,
+    description: description || null,
+    program_type: programType || null,
+    program_url: programUrl || null,
+    notes: notes || null,
+  };
+
+  try {
+    const url = _editingProjectId ? `/api/projects/${_editingProjectId}` : '/api/projects';
+    const method = _editingProjectId ? 'PATCH' : 'POST';
+    const r = await _mfetch(url, {
+      method,
+      body: JSON.stringify(data),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    _projectModal.hide();
+    showToast('Project saved successfully', 'success');
+    await loadProjects();
+  } catch(e) {
+    showToast('Failed to save project: ' + e.message, 'danger');
+  }
+}
+
+async function deleteProject(id, name) {
+  if (!confirm(`Delete project "${name}" and all its assets?\n\nThis will also delete all mobile apps and API assets associated with this project. Domains will NOT be deleted.`)) {
+    return;
+  }
+
+  try {
+    const r = await _mfetch(`/api/projects/${id}`, {method: 'DELETE'});
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    showToast('Project deleted successfully', 'success');
+    await loadProjects();
+  } catch(e) {
+    showToast('Failed to delete project: ' + e.message, 'danger');
+  }
+}
+
+async function viewProjectDetails(id) {
+  showToast('Project details view coming soon!', 'info');
+  // TODO: Implement detailed project view with tabs for domains, mobile apps, API assets
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────

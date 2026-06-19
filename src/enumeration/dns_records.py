@@ -1,7 +1,10 @@
-"""DNS record enumeration (MX, NS, TXT, SOA) for target domain."""
+"""DNS record enumeration (MX, NS, TXT, SOA, SRV, CAA, etc.) for target domain."""
+
+from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 import dns.asyncresolver
 import dns.exception
@@ -114,3 +117,219 @@ async def enumerate_dns_records(
 
     logger.info(f"DNS records: found {len(found)} FQDNs in DNS records for {domain}")
     return found
+
+
+# ── Comprehensive DNS Record Collection ───────────────────────────────────────
+
+async def get_all_dns_records(
+    domain: str,
+    resolvers: list[str],
+    timeout: int = 5,
+) -> dict[str, Any]:
+    """
+    Collect all DNS record types for a domain in structured format.
+
+    Args:
+        domain: Target domain
+        resolvers: List of DNS resolver IP addresses
+        timeout: Per-query lifetime in seconds
+
+    Returns:
+        {
+            "mx": [...],
+            "ns": [...],
+            "txt": [...],
+            "soa": {...},
+            "srv": [...],
+            "caa": [...],
+            "a": [...],
+            "aaaa": [...]
+        }
+    """
+    if not resolvers:
+        resolvers = ["8.8.8.8", "1.1.1.1"]
+
+    resolver = dns.asyncresolver.Resolver()
+    resolver.nameservers = resolvers
+    resolver.lifetime = float(timeout)
+
+    result: dict[str, Any] = {
+        "mx": [],
+        "ns": [],
+        "txt": [],
+        "soa": None,
+        "srv": [],
+        "caa": [],
+        "a": [],
+        "aaaa": [],
+    }
+
+    # MX records
+    try:
+        answer = await resolver.resolve(domain, "MX")
+        for rdata in answer:
+            result["mx"].append({
+                "exchange": str(rdata.exchange).rstrip("."),
+                "priority": rdata.preference,
+            })
+    except Exception as e:
+        logger.debug(f"MX query error for {domain}: {e}")
+
+    # NS records
+    try:
+        answer = await resolver.resolve(domain, "NS")
+        for rdata in answer:
+            result["ns"].append(str(rdata.target).rstrip("."))
+    except Exception as e:
+        logger.debug(f"NS query error for {domain}: {e}")
+
+    # TXT records
+    try:
+        answer = await resolver.resolve(domain, "TXT")
+        for rdata in answer:
+            txt_value = " ".join(
+                part.decode("utf-8", errors="ignore") if isinstance(part, bytes) else str(part)
+                for part in rdata.strings
+            )
+            result["txt"].append(txt_value)
+    except Exception as e:
+        logger.debug(f"TXT query error for {domain}: {e}")
+
+    # SOA record
+    try:
+        answer = await resolver.resolve(domain, "SOA")
+        if answer:
+            rdata = answer[0]
+            result["soa"] = {
+                "mname": str(rdata.mname).rstrip("."),
+                "rname": str(rdata.rname).rstrip("."),
+                "serial": rdata.serial,
+                "refresh": rdata.refresh,
+                "retry": rdata.retry,
+                "expire": rdata.expire,
+                "minimum": rdata.minimum,
+            }
+    except Exception as e:
+        logger.debug(f"SOA query error for {domain}: {e}")
+
+    # A records
+    try:
+        answer = await resolver.resolve(domain, "A")
+        for rdata in answer:
+            result["a"].append(str(rdata))
+    except Exception as e:
+        logger.debug(f"A query error for {domain}: {e}")
+
+    # AAAA records
+    try:
+        answer = await resolver.resolve(domain, "AAAA")
+        for rdata in answer:
+            result["aaaa"].append(str(rdata))
+    except Exception as e:
+        logger.debug(f"AAAA query error for {domain}: {e}")
+
+    # SRV records (common services)
+    common_services = [
+        "_sip._tcp",
+        "_sips._tcp",
+        "_xmpp-server._tcp",
+        "_xmpp-client._tcp",
+        "_ldap._tcp",
+        "_ldaps._tcp",
+    ]
+
+    for service in common_services:
+        try:
+            fqdn = f"{service}.{domain}"
+            answer = await resolver.resolve(fqdn, "SRV")
+            for rdata in answer:
+                result["srv"].append({
+                    "service": service,
+                    "target": str(rdata.target).rstrip("."),
+                    "port": rdata.port,
+                    "priority": rdata.priority,
+                    "weight": rdata.weight,
+                })
+        except Exception:
+            pass  # SRV records are optional
+
+    # CAA records
+    try:
+        answer = await resolver.resolve(domain, "CAA")
+        for rdata in answer:
+            result["caa"].append({
+                "flag": rdata.flag,
+                "tag": rdata.tag,
+                "value": rdata.value,
+            })
+    except Exception as e:
+        logger.debug(f"CAA query error for {domain}: {e}")
+
+    return result
+
+
+async def get_nameservers_for_domain(
+    domain: str,
+    resolvers: list[str],
+    timeout: int = 5,
+) -> list[str]:
+    """
+    Get list of nameservers for a domain.
+
+    Args:
+        domain: Target domain
+        resolvers: List of DNS resolver IP addresses
+        timeout: Per-query lifetime in seconds
+
+    Returns:
+        List of nameserver hostnames
+    """
+    if not resolvers:
+        resolvers = ["8.8.8.8", "1.1.1.1"]
+
+    resolver = dns.asyncresolver.Resolver()
+    resolver.nameservers = resolvers
+    resolver.lifetime = float(timeout)
+
+    nameservers = []
+
+    try:
+        answer = await resolver.resolve(domain, "NS")
+        for rdata in answer:
+            ns = str(rdata.target).rstrip(".")
+            if ns:
+                nameservers.append(ns)
+    except Exception as e:
+        logger.debug(f"NS query error for {domain}: {e}")
+
+    return nameservers
+
+
+async def check_dnssec_existence(
+    domain: str,
+    resolvers: list[str],
+    timeout: int = 5,
+) -> bool:
+    """
+    Quick check if DNSSEC is enabled for a domain.
+
+    Args:
+        domain: Target domain
+        resolvers: List of DNS resolver IP addresses
+        timeout: Per-query lifetime in seconds
+
+    Returns:
+        True if DNSKEY records found
+    """
+    if not resolvers:
+        resolvers = ["8.8.8.8", "1.1.1.1"]
+
+    resolver = dns.asyncresolver.Resolver()
+    resolver.nameservers = resolvers
+    resolver.lifetime = float(timeout)
+
+    try:
+        await resolver.resolve(domain, "DNSKEY")
+        return True
+    except Exception:
+        return False

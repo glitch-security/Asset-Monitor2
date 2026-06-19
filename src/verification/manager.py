@@ -17,8 +17,11 @@ from ..config import AppConfig
 from ..database import DatabaseManager
 from .classifier import classify_subdomain
 from .dns_resolver import resolve_subdomain
+from .dnssec import analyze_dnssec
+from .email_security import analyze_email_security
 from .fingerprinter import fingerprint, get_cert_fingerprint, get_favicon_hash
 from .http_prober import probe_subdomain
+from .nameserver_security import analyze_nameservers
 from .takeover import check_takeover
 
 logger = logging.getLogger(__name__)
@@ -225,7 +228,57 @@ class VerificationManager:
             logger.warning("Classification failed for %s: %s", fqdn, exc)
 
         # ------------------------------------------------------------------
-        # Step 6 – Upsert into database
+        # Step 6 – DNS Security Analysis
+        # ------------------------------------------------------------------
+        try:
+            # Get root domain for DNS security checks
+            parts = fqdn.split(".")
+            if len(parts) >= 2:
+                root_domain = ".".join(parts[-2:])
+
+                # DNSSEC analysis (if enabled)
+                if cfg_verification.dnssec_check:
+                    try:
+                        dnssec_result = await analyze_dnssec(root_domain, resolvers)
+                        result["dnssec_info"] = dnssec_result
+                    except Exception as exc:
+                        logger.debug("DNSSEC analysis failed for %s: %s", fqdn, exc)
+                        result["dnssec_info"] = None
+                else:
+                    result["dnssec_info"] = None
+
+                # Email security analysis (if enabled)
+                if cfg_verification.email_security_check:
+                    try:
+                        email_security_result = await analyze_email_security(root_domain, resolvers)
+                        result["email_security"] = email_security_result
+                    except Exception as exc:
+                        logger.debug("Email security analysis failed for %s: %s", fqdn, exc)
+                        result["email_security"] = None
+                else:
+                    result["email_security"] = None
+
+                # Nameserver security analysis (if enabled)
+                if cfg_verification.nameserver_security_check:
+                    try:
+                        # First get the nameservers for the domain
+                        from ..enumeration.dns_records import get_nameservers_for_domain
+                        nameservers = await get_nameservers_for_domain(root_domain, resolvers)
+                        if nameservers:
+                            ns_security_result = await analyze_nameservers(root_domain, nameservers, resolvers)
+                            result["nameserver_security"] = ns_security_result
+                        else:
+                            result["nameserver_security"] = None
+                    except Exception as exc:
+                        logger.debug("Nameserver security analysis failed for %s: %s", fqdn, exc)
+                        result["nameserver_security"] = None
+                else:
+                    result["nameserver_security"] = None
+        except Exception as exc:
+            logger.warning("DNS security analysis failed for %s: %s", fqdn, exc)
+
+        # ------------------------------------------------------------------
+        # Step 7 – Upsert into database
         # ------------------------------------------------------------------
         await self._persist(result)
 
@@ -419,7 +472,161 @@ class VerificationManager:
                 new_takeover,
             ))
 
+        # DNS security changes
+        _check_dnssec_changes(fqdn, old_data, new_data, _event, events)
+        _check_email_security_changes(fqdn, old_data, new_data, _event, events)
+        _check_nameserver_security_changes(fqdn, old_data, new_data, _event, events)
+
         return events
+
+
+def _check_dnssec_changes(
+    fqdn: str, old_data: dict, new_data: dict, _event: callable, events: list[dict]
+) -> None:
+    """Check for DNSSEC configuration changes."""
+    old_dnssec = old_data.get("dnssec_info") or {}
+    new_dnssec = new_data.get("dnssec_info") or {}
+
+    old_enabled = old_dnssec.get("dnssec_enabled", False)
+    new_enabled = new_dnssec.get("dnssec_enabled", False)
+
+    if old_enabled != new_enabled:
+        if new_enabled:
+            events.append(_event(
+                "DNSSEC_ENABLED",
+                "INFO",
+                f"DNSSEC is now enabled for {fqdn}",
+                {"dnssec_enabled": True},
+            ))
+        else:
+            events.append(_event(
+                "DNSSEC_DISABLED",
+                "WARNING",
+                f"DNSSEC is now disabled for {fqdn}",
+                {"dnssec_enabled": False},
+            ))
+
+
+def _check_email_security_changes(
+    fqdn: str, old_data: dict, new_data: dict, _event: callable, events: list[dict]
+) -> None:
+    """Check for email security (SPF/DKIM/DMARC) changes."""
+    old_email = old_data.get("email_security") or {}
+    new_email = new_data.get("email_security") or {}
+
+    # Check for SPF changes
+    old_spf = (old_email.get("spf") or {}).get("record")
+    new_spf = (new_email.get("spf") or {}).get("record")
+    if old_spf != new_spf:
+        if new_spf and not old_spf:
+            events.append(_event(
+                "SPF_CONFIGURED",
+                "INFO",
+                f"SPF record now present for {fqdn}",
+                {"spf_record": new_spf[:100] + "..." if len(new_spf or "") > 100 else new_spf},
+            ))
+        elif old_spf and not new_spf:
+            events.append(_event(
+                "SPF_REMOVED",
+                "WARNING",
+                f"SPF record removed for {fqdn}",
+                {"old_spf_record": old_spf[:100] + "..." if len(old_spf) > 100 else old_spf},
+            ))
+        else:
+            events.append(_event(
+                "SPF_CHANGED",
+                "INFO",
+                f"SPF record changed for {fqdn}",
+                {"old": old_spf[:50] + "..." if len(old_spf or "") > 50 else old_spf,
+                 "new": new_spf[:50] + "..." if len(new_spf or "") > 50 else new_spf},
+            ))
+
+    # Check for DMARC changes
+    old_dmarc = (old_email.get("dmarc") or {}).get("record")
+    new_dmarc = (new_email.get("dmarc") or {}).get("record")
+    if old_dmarc != new_dmarc:
+        if new_dmarc and not old_dmarc:
+            events.append(_event(
+                "DMARC_CONFIGURED",
+                "INFO",
+                f"DMARC record now present for {fqdn}",
+                {"dmarc_record": new_dmarc[:100] + "..." if len(new_dmarc or "") > 100 else new_dmarc},
+            ))
+        elif old_dmarc and not new_dmarc:
+            events.append(_event(
+                "DMARC_REMOVED",
+                "WARNING",
+                f"DMARC record removed for {fqdn}",
+                {"old_dmarc_record": old_dmarc[:100] + "..." if len(old_dmarc) > 100 else old_dmarc},
+            ))
+        else:
+            events.append(_event(
+                "DMARC_CHANGED",
+                "INFO",
+                f"DMARC record changed for {fqdn}",
+                {"old": old_dmarc[:50] + "..." if len(old_dmarc or "") > 50 else old_dmarc,
+                 "new": new_dmarc[:50] + "..." if len(new_dmarc or "") > 50 else new_dmarc},
+            ))
+
+    # Check overall score changes (significant drops only)
+    old_score = (old_email.get("spf") or {}).get("score", 0) + (old_email.get("dmarc") or {}).get("score", 0)
+    new_score = (new_email.get("spf") or {}).get("score", 0) + (new_email.get("dmarc") or {}).get("score", 0)
+    if old_score > 0 and new_score > 0 and abs(new_score - old_score) >= 10:
+        events.append(_event(
+            "EMAIL_SECURITY_SCORE_CHANGED",
+            "LOW",
+            f"Email security score changed for {fqdn}: {old_score} → {new_score}",
+            {"old_score": old_score, "new_score": new_score},
+        ))
+
+
+def _check_nameserver_security_changes(
+    fqdn: str, old_data: dict, new_data: dict, _event: callable, events: list[dict]
+) -> None:
+    """Check for nameserver security changes."""
+    old_ns = old_data.get("nameserver_security") or {}
+    new_ns = new_data.get("nameserver_security") or {}
+
+    # Check for new security issues
+    old_issues = set(old_ns.get("issues", []) or [])
+    new_issues = set(new_ns.get("issues", []) or [])
+    added_issues = new_issues - old_issues
+    removed_issues = old_issues - new_issues
+
+    if added_issues:
+        events.append(_event(
+            "NS_SECURITY_ISSUE_DETECTED",
+            "MEDIUM",
+            f"Nameserver security issue detected for {fqdn}: {list(added_issues)[0] if added_issues else 'unknown'}",
+            {"issues": list(added_issues)},
+        ))
+
+    if removed_issues and not added_issues:
+        events.append(_event(
+            "NS_SECURITY_ISSUE_RESOLVED",
+            "INFO",
+            f"Nameserver security issue resolved for {fqdn}",
+            {"resolved_issues": list(removed_issues)},
+        ))
+
+    # Check for DNSSEC validation changes
+    old_validated = old_ns.get("dnssec_validated", False)
+    new_validated = new_ns.get("dnssec_validated", False)
+    if old_validated != new_validated:
+        if new_validated:
+            events.append(_event(
+                "NS_DNSSEC_VALIDATION_OK",
+                "INFO",
+                f"Nameserver DNSSEC validation now passing for {fqdn}",
+                {"dnssec_validated": True},
+            ))
+        else:
+            events.append(_event(
+                "NS_DNSSEC_VALIDATION_FAILED",
+                "WARNING",
+                f"Nameserver DNSSEC validation now failing for {fqdn}",
+                {"dnssec_validated": False},
+            ))
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -462,7 +669,7 @@ class VerificationManager:
                 takeover_vulnerable=takeover_vulnerable,
             )
 
-            # Add a snapshot scan record
+            # Add a snapshot scan record with DNS security data
             self._db.add_scan_record(
                 subdomain_id=self._db.get_subdomain(fqdn).id,
                 status=status,
@@ -471,6 +678,9 @@ class VerificationManager:
                 body_hash=body_hash,
                 technologies=result.get("technologies") or None,
                 raw_headers=result.get("response_headers") or None,
+                dnssec_info=result.get("dnssec_info"),
+                email_security=result.get("email_security"),
+                nameserver_security=result.get("nameserver_security"),
             )
         except Exception as exc:
             logger.error("Database upsert failed for %s: %s", fqdn, exc)

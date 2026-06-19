@@ -89,6 +89,7 @@ class Company(Base):
     is_active: bool = Column(Boolean, default=True, nullable=False, index=True)
     program_type: Optional[str] = Column(String(64), nullable=True)   # HackerOne / Bugcrowd / private …
     program_url: Optional[str] = Column(String(512), nullable=True)
+    notes: Optional[str] = Column(Text, nullable=True)  # Freeform notes about the project
     created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     domains: List["Domain"] = relationship(
@@ -96,6 +97,12 @@ class Company(Base):
     )
     manual_ips: List["ManualIP"] = relationship(
         "ManualIP", back_populates="company_ref", cascade="all, delete-orphan"
+    )
+    mobile_apps: List["MobileApp"] = relationship(
+        "MobileApp", back_populates="company_ref", cascade="all, delete-orphan"
+    )
+    api_assets: List["APIAsset"] = relationship(
+        "APIAsset", back_populates="company_ref", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -217,6 +224,10 @@ class SubdomainScan(Base):
     # JSON columns
     technologies: Optional[Any] = Column(JSONEncodedValue, nullable=True)
     raw_headers: Optional[Any] = Column(JSONEncodedValue, nullable=True)
+    dns_records: Optional[Any] = Column(JSONEncodedValue, nullable=True)
+    dnssec_info: Optional[Any] = Column(JSONEncodedValue, nullable=True)
+    email_security: Optional[Any] = Column(JSONEncodedValue, nullable=True)
+    nameserver_security: Optional[Any] = Column(JSONEncodedValue, nullable=True)
 
     subdomain_ref: "Subdomain" = relationship("Subdomain", back_populates="scans")
 
@@ -357,6 +368,66 @@ class Asset(Base):
             f"<Asset id={self.id} subdomain_id={self.subdomain_id} "
             f"asset_type={self.asset_type!r} url={self.asset_url!r}>"
         )
+
+
+class MobileApp(Base):
+    """A mobile application asset (Android/iOS) owned by a company."""
+
+    __tablename__ = "mobile_apps"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    company_id: int = Column(
+        Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: str = Column(String(256), nullable=False)
+    platform: str = Column(String(32), nullable=False, index=True)  # android, ios
+    package_name: Optional[str] = Column(String(256), nullable=True)  # com.example.app
+    app_store_url: Optional[str] = Column(String(512), nullable=True)
+    store_id: Optional[str] = Column(String(256), nullable=True)  # App Store / Play Store ID
+    last_scan: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    is_active: bool = Column(Boolean, default=True, nullable=False)
+    notes: Optional[str] = Column(Text, nullable=True)
+    created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    # JSON columns
+    app_metadata: Optional[Any] = Column(JSONEncodedValue, nullable=True)  # version, permissions, etc.
+    security_issues: Optional[Any] = Column(JSONEncodedValue, nullable=True)  # found vulnerabilities
+
+    company_ref: "Company" = relationship("Company", back_populates="mobile_apps")
+
+    def __repr__(self) -> str:
+        return f"<MobileApp id={self.id} name={self.name!r} platform={self.platform!r}>"
+
+
+class APIAsset(Base):
+    """An API endpoint or API documentation asset owned by a company."""
+
+    __tablename__ = "api_assets"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    company_id: int = Column(
+        Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: str = Column(String(256), nullable=False)
+    base_url: str = Column(String(512), nullable=False)
+    api_type: str = Column(String(64), nullable=False, index=True)  # rest, graphql, grpc, soap
+    specification_url: Optional[str] = Column(String(512), nullable=True)  # swagger.json, openapi.yaml
+    authentication: Optional[str] = Column(String(128), nullable=True)  # bearer, api_key, oauth, none
+    is_public: bool = Column(Boolean, default=False, nullable=False)
+    last_scan: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    is_active: bool = Column(Boolean, default=True, nullable=False)
+    notes: Optional[str] = Column(Text, nullable=True)
+    created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+    # JSON columns
+    endpoints: Optional[Any] = Column(JSONEncodedValue, nullable=True)  # discovered endpoints
+    security_issues: Optional[Any] = Column(JSONEncodedValue, nullable=True)  # found vulnerabilities
+    headers: Optional[Any] = Column(JSONEncodedValue, nullable=True)  # discovered headers
+
+    company_ref: "Company" = relationship("Company", back_populates="api_assets")
+
+    def __repr__(self) -> str:
+        return f"<APIAsset id={self.id} name={self.name!r} type={self.api_type!r} url={self.base_url!r}>"
 
 
 class ScanProfile(Base):
@@ -595,6 +666,19 @@ class DatabaseManager:
                         "ALTER TABLE domains ADD COLUMN scope_type VARCHAR(32) DEFAULT 'unknown' NOT NULL"
                     )
                 )
+
+            # Add notes to companies if missing
+            rows = conn.execute(
+                __import__("sqlalchemy").text("PRAGMA table_info(companies)")
+            ).fetchall()
+            existing_cols = {r[1] for r in rows}
+            if "notes" not in existing_cols:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE companies ADD COLUMN notes TEXT"
+                    )
+                )
+
             conn.commit()
 
     # ------------------------------------------------------------------
@@ -974,6 +1058,16 @@ class DatabaseManager:
             session.flush()
             session.refresh(obj)
             return obj
+
+    def get_latest_subdomain_scan(self, subdomain_id: int) -> Optional[SubdomainScan]:
+        """Return the most recent :class:`SubdomainScan` for a subdomain, or ``None``."""
+        with self.get_session() as session:
+            return session.scalar(
+                select(SubdomainScan)
+                .where(SubdomainScan.subdomain_id == subdomain_id)
+                .order_by(SubdomainScan.scanned_at.desc())
+                .limit(1)
+            )
 
     # ------------------------------------------------------------------
     # Endpoint operations
@@ -1558,6 +1652,372 @@ class DatabaseManager:
                 self.set_user(username, new_hash, role)
                 return role
         return None
+
+    # ------------------------------------------------------------------
+    # Company (Project) operations
+    # ------------------------------------------------------------------
+
+    def create_company(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        program_type: Optional[str] = None,
+        program_url: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Company:
+        """Create a new company/project.
+
+        Args:
+            name: Company/project name (must be unique).
+            description: Optional description.
+            program_type: Optional program type (HackerOne, Bugcrowd, private, etc.).
+            program_url: Optional program URL.
+            notes: Optional freeform notes.
+
+        Returns:
+            The newly created :class:`Company` object.
+        """
+        with self.get_session() as session:
+            obj = Company(
+                name=name,
+                description=description,
+                program_type=program_type,
+                program_url=program_url,
+                notes=notes,
+            )
+            session.add(obj)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def get_company(self, company_id: int) -> Optional[Company]:
+        """Retrieve a company by ID.
+
+        Args:
+            company_id: The primary key of the company.
+
+        Returns:
+            The :class:`Company` object or ``None`` if not found.
+        """
+        with self.get_session() as session:
+            return session.get(Company, company_id)
+
+    def get_company_by_name(self, name: str) -> Optional[Company]:
+        """Retrieve a company by name.
+
+        Args:
+            name: The company name.
+
+        Returns:
+            The :class:`Company` object or ``None`` if not found.
+        """
+        with self.get_session() as session:
+            return session.scalar(select(Company).where(Company.name == name))
+
+    def get_all_companies(self) -> List[Company]:
+        """Return all companies/projects.
+
+        Returns:
+            A list of :class:`Company` objects.
+        """
+        with self.get_session() as session:
+            return list(session.scalars(select(Company).order_by(Company.name)).all())
+
+    def update_company(self, company_id: int, **kwargs: Any) -> Optional[Company]:
+        """Update a company's attributes.
+
+        Args:
+            company_id: The primary key of the company.
+            **kwargs: Field values to update (name, description, notes, etc.).
+
+        Returns:
+            The updated :class:`Company` object or ``None`` if not found.
+        """
+        with self.get_session() as session:
+            obj = session.get(Company, company_id)
+            if obj is None:
+                return None
+            for key, value in kwargs.items():
+                if hasattr(obj, key):
+                    setattr(obj, key, value)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def delete_company(self, company_id: int) -> bool:
+        """Delete a company and all its assets (cascade).
+
+        Args:
+            company_id: The primary key of the company.
+
+        Returns:
+            ``True`` if the company was found and deleted, ``False`` otherwise.
+        """
+        with self.get_session() as session:
+            obj = session.get(Company, company_id)
+            if obj is None:
+                return False
+            session.delete(obj)
+            return True
+
+    def get_company_details(self, company_id: int) -> Optional[Dict[str, Any]]:
+        """Return full details for a company including all asset types.
+
+        Args:
+            company_id: The primary key of the company.
+
+        Returns:
+            A dict with company info, domains, mobile apps, and API assets, or ``None``.
+        """
+        with self.get_session() as session:
+            company = session.get(Company, company_id)
+            if company is None:
+                return None
+
+            # Get domains
+            domains = list(
+                session.scalars(
+                    select(Domain).where(Domain.company_id == company_id)
+                    .order_by(Domain.domain)
+                ).all()
+            )
+
+            # Get mobile apps
+            mobile_apps = list(
+                session.scalars(
+                    select(MobileApp).where(MobileApp.company_id == company_id)
+                    .order_by(MobileApp.name)
+                ).all()
+            )
+
+            # Get API assets
+            api_assets = list(
+                session.scalars(
+                    select(APIAsset).where(APIAsset.company_id == company_id)
+                    .order_by(APIAsset.name)
+                ).all()
+            )
+
+            return {
+                "company": {
+                    "id": company.id,
+                    "name": company.name,
+                    "description": company.description,
+                    "is_active": company.is_active,
+                    "program_type": company.program_type,
+                    "program_url": company.program_url,
+                    "notes": company.notes,
+                    "created_at": company.created_at.isoformat() if company.created_at else None,
+                },
+                "domains": [
+                    {
+                        "id": d.id,
+                        "domain": d.domain,
+                        "scope_type": d.scope_type,
+                        "added_at": d.added_at.isoformat() if d.added_at else None,
+                        "last_scan": d.last_scan.isoformat() if d.last_scan else None,
+                    }
+                    for d in domains
+                ],
+                "mobile_apps": [
+                    {
+                        "id": app.id,
+                        "name": app.name,
+                        "platform": app.platform,
+                        "package_name": app.package_name,
+                        "app_store_url": app.app_store_url,
+                        "store_id": app.store_id,
+                        "is_active": app.is_active,
+                        "notes": app.notes,
+                        "last_scan": app.last_scan.isoformat() if app.last_scan else None,
+                        "created_at": app.created_at.isoformat() if app.created_at else None,
+                    }
+                    for app in mobile_apps
+                ],
+                "api_assets": [
+                    {
+                        "id": api.id,
+                        "name": api.name,
+                        "base_url": api.base_url,
+                        "api_type": api.api_type,
+                        "specification_url": api.specification_url,
+                        "authentication": api.authentication,
+                        "is_public": api.is_public,
+                        "is_active": api.is_active,
+                        "notes": api.notes,
+                        "last_scan": api.last_scan.isoformat() if api.last_scan else None,
+                        "created_at": api.created_at.isoformat() if api.created_at else None,
+                    }
+                    for api in api_assets
+                ],
+            }
+
+    # ------------------------------------------------------------------
+    # Mobile App operations
+    # ------------------------------------------------------------------
+
+    def create_mobile_app(
+        self,
+        company_id: int,
+        name: str,
+        platform: str,
+        package_name: Optional[str] = None,
+        app_store_url: Optional[str] = None,
+        store_id: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> MobileApp:
+        """Create a new mobile app asset.
+
+        Args:
+            company_id: FK to the owning company.
+            name: App name.
+            platform: Platform (android or ios).
+            package_name: Optional package name (e.g., com.example.app).
+            app_store_url: Optional store URL.
+            store_id: Optional store ID.
+            notes: Optional notes.
+
+        Returns:
+            The newly created :class:`MobileApp` object.
+        """
+        with self.get_session() as session:
+            obj = MobileApp(
+                company_id=company_id,
+                name=name,
+                platform=platform,
+                package_name=package_name,
+                app_store_url=app_store_url,
+                store_id=store_id,
+                notes=notes,
+            )
+            session.add(obj)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def get_mobile_app(self, app_id: int) -> Optional[MobileApp]:
+        """Retrieve a mobile app by ID."""
+        with self.get_session() as session:
+            return session.get(MobileApp, app_id)
+
+    def update_mobile_app(self, app_id: int, **kwargs: Any) -> Optional[MobileApp]:
+        """Update a mobile app's attributes."""
+        with self.get_session() as session:
+            obj = session.get(MobileApp, app_id)
+            if obj is None:
+                return None
+            for key, value in kwargs.items():
+                if hasattr(obj, key):
+                    setattr(obj, key, value)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def delete_mobile_app(self, app_id: int) -> bool:
+        """Delete a mobile app."""
+        with self.get_session() as session:
+            obj = session.get(MobileApp, app_id)
+            if obj is None:
+                return False
+            session.delete(obj)
+            return True
+
+    def get_all_mobile_apps(self, company_id: Optional[int] = None) -> List[MobileApp]:
+        """Return all mobile apps, optionally filtered by company."""
+        with self.get_session() as session:
+            if company_id is not None:
+                return list(
+                    session.scalars(
+                        select(MobileApp).where(MobileApp.company_id == company_id)
+                        .order_by(MobileApp.name)
+                    ).all()
+                )
+            return list(session.scalars(select(MobileApp).order_by(MobileApp.name)).all())
+
+    # ------------------------------------------------------------------
+    # API Asset operations
+    # ------------------------------------------------------------------
+
+    def create_api_asset(
+        self,
+        company_id: int,
+        name: str,
+        base_url: str,
+        api_type: str,
+        specification_url: Optional[str] = None,
+        authentication: Optional[str] = None,
+        is_public: bool = False,
+        notes: Optional[str] = None,
+    ) -> APIAsset:
+        """Create a new API asset.
+
+        Args:
+            company_id: FK to the owning company.
+            name: API name.
+            base_url: Base URL of the API.
+            api_type: API type (rest, graphql, grpc, soap).
+            specification_url: Optional spec URL (swagger.json, etc.).
+            authentication: Optional auth type (bearer, api_key, oauth, none).
+            is_public: Whether the API is publicly accessible.
+            notes: Optional notes.
+
+        Returns:
+            The newly created :class:`APIAsset` object.
+        """
+        with self.get_session() as session:
+            obj = APIAsset(
+                company_id=company_id,
+                name=name,
+                base_url=base_url,
+                api_type=api_type,
+                specification_url=specification_url,
+                authentication=authentication,
+                is_public=is_public,
+                notes=notes,
+            )
+            session.add(obj)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def get_api_asset(self, asset_id: int) -> Optional[APIAsset]:
+        """Retrieve an API asset by ID."""
+        with self.get_session() as session:
+            return session.get(APIAsset, asset_id)
+
+    def update_api_asset(self, asset_id: int, **kwargs: Any) -> Optional[APIAsset]:
+        """Update an API asset's attributes."""
+        with self.get_session() as session:
+            obj = session.get(APIAsset, asset_id)
+            if obj is None:
+                return None
+            for key, value in kwargs.items():
+                if hasattr(obj, key):
+                    setattr(obj, key, value)
+            session.flush()
+            session.refresh(obj)
+            return obj
+
+    def delete_api_asset(self, asset_id: int) -> bool:
+        """Delete an API asset."""
+        with self.get_session() as session:
+            obj = session.get(APIAsset, asset_id)
+            if obj is None:
+                return False
+            session.delete(obj)
+            return True
+
+    def get_all_api_assets(self, company_id: Optional[int] = None) -> List[APIAsset]:
+        """Return all API assets, optionally filtered by company."""
+        with self.get_session() as session:
+            if company_id is not None:
+                return list(
+                    session.scalars(
+                        select(APIAsset).where(APIAsset.company_id == company_id)
+                        .order_by(APIAsset.name)
+                    ).all()
+                )
+            return list(session.scalars(select(APIAsset).order_by(APIAsset.name)).all())
 
     def get_or_create_flask_secret(self) -> str:
         """Return a stable Flask secret key, generating one on first call."""

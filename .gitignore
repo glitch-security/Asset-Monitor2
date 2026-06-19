@@ -77,7 +77,7 @@ coverage.xml
 
 # ----- Agent-internal / operational docs (not for public repo) -----
 CODEBASE.md
-TESTING_INSTRUCTIONS.md
-TEST_REPORT.md
-*_REPORT.md
-*_INSTRUCTIONS.md
+CLAUDE.md
+instructions.md
+*_MEMORY.md
+*_INTERNAL.md

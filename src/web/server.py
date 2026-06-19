@@ -645,6 +645,55 @@ def build_app(
             logger.error("api_domain_details error: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
 
+    @app.get("/api/domains/{domain_id}/dns-security")
+    async def api_domain_dns_security(domain_id: int):
+        """Get DNS security analysis data for all subdomains of a domain."""
+        try:
+            from sqlalchemy import select, desc
+            from src.database import SubdomainScan, Subdomain
+
+            with db.get_session() as session:
+                # Get all subdomains for this domain
+                subs = list(session.scalars(
+                    select(Subdomain)
+                    .where(Subdomain.domain_id == domain_id)
+                    .order_by(Subdomain.fqdn)
+                ).all())
+
+                dns_security_data = []
+                for sub in subs:
+                    # Get the latest scan with DNS security data
+                    latest_scan = session.scalars(
+                        select(SubdomainScan)
+                        .where(SubdomainScan.subdomain_id == sub.id)
+                        .order_by(desc(SubdomainScan.scanned_at))
+                        .limit(1)
+                    ).first()
+
+                    if latest_scan:
+                        dns_security_data.append({
+                            "fqdn": sub.fqdn,
+                            "status": sub.status,
+                            "scanned_at": latest_scan.scanned_at.isoformat() if latest_scan.scanned_at else None,
+                            "dnssec_info": latest_scan.dnssec_info,
+                            "email_security": latest_scan.email_security,
+                            "nameserver_security": latest_scan.nameserver_security,
+                        })
+                    else:
+                        dns_security_data.append({
+                            "fqdn": sub.fqdn,
+                            "status": sub.status,
+                            "scanned_at": None,
+                            "dnssec_info": None,
+                            "email_security": None,
+                            "nameserver_security": None,
+                        })
+
+                return dns_security_data
+        except Exception as exc:
+            logger.error("api_domain_dns_security error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
     # ────────────────────────────────────────────────────────────────────────
     # API — scan profiles
     # ────────────────────────────────────────────────────────────────────────
@@ -941,6 +990,366 @@ def build_app(
         except HTTPException:
             raise
         except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — Projects (Companies) management
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/projects")
+    async def api_list_projects():
+        """List all projects/companies with summary stats."""
+        try:
+            companies = db.get_all_companies()
+            result = []
+            for company in companies:
+                # Get counts for each asset type
+                domain_count = len([d for d in company.domains if d.domain])
+                mobile_count = len(company.mobile_apps)
+                api_count = len(company.api_assets)
+                result.append({
+                    "id": company.id,
+                    "name": company.name,
+                    "description": company.description,
+                    "is_active": company.is_active,
+                    "program_type": company.program_type,
+                    "program_url": company.program_url,
+                    "notes": company.notes,
+                    "created_at": company.created_at.isoformat() if company.created_at else None,
+                    "stats": {
+                        "domains": domain_count,
+                        "mobile_apps": mobile_count,
+                        "api_assets": api_count,
+                    }
+                })
+            return result
+        except Exception as exc:
+            logger.error("api_list_projects error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/api/projects/{project_id}")
+    async def api_get_project(project_id: int):
+        """Get full details for a specific project."""
+        try:
+            details = db.get_company_details(project_id)
+            if details is None:
+                raise HTTPException(status_code=404, detail="Project not found")
+            return details
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_get_project error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/projects", status_code=201, dependencies=[Depends(_require_admin)])
+    async def api_create_project(request: Request):
+        """Create a new project/company."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        name = (data.get("name") or "").strip()
+        description = data.get("description")
+        program_type = data.get("program_type")
+        program_url = data.get("program_url")
+        notes = data.get("notes")
+
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+
+        try:
+            company = db.create_company(
+                name=name,
+                description=description,
+                program_type=program_type,
+                program_url=program_url,
+                notes=notes,
+            )
+            return {
+                "id": company.id,
+                "name": company.name,
+                "description": company.description,
+                "is_active": company.is_active,
+                "program_type": company.program_type,
+                "program_url": company.program_url,
+                "notes": company.notes,
+                "created_at": company.created_at.isoformat() if company.created_at else None,
+            }
+        except Exception as exc:
+            logger.error("api_create_project error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.patch("/api/projects/{project_id}", dependencies=[Depends(_require_admin)])
+    async def api_update_project(project_id: int, request: Request):
+        """Update a project's attributes."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        try:
+            company = db.update_company(project_id, **data)
+            if company is None:
+                raise HTTPException(status_code=404, detail="Project not found")
+            return {
+                "id": company.id,
+                "name": company.name,
+                "description": company.description,
+                "is_active": company.is_active,
+                "program_type": company.program_type,
+                "program_url": company.program_url,
+                "notes": company.notes,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_update_project error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/api/projects/{project_id}", dependencies=[Depends(_require_admin)])
+    async def api_delete_project(project_id: int):
+        """Delete a project and all its assets."""
+        try:
+            deleted = db.delete_company(project_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Project not found")
+            return {"deleted": True, "id": project_id}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_delete_project error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — Mobile Apps management
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/projects/{project_id}/mobile-apps")
+    async def api_list_mobile_apps(project_id: int):
+        """List all mobile apps for a project."""
+        try:
+            apps = db.get_all_mobile_apps(company_id=project_id)
+            return [
+                {
+                    "id": app.id,
+                    "name": app.name,
+                    "platform": app.platform,
+                    "package_name": app.package_name,
+                    "app_store_url": app.app_store_url,
+                    "store_id": app.store_id,
+                    "is_active": app.is_active,
+                    "notes": app.notes,
+                    "last_scan": app.last_scan.isoformat() if app.last_scan else None,
+                    "created_at": app.created_at.isoformat() if app.created_at else None,
+                }
+                for app in apps
+            ]
+        except Exception as exc:
+            logger.error("api_list_mobile_apps error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/projects/{project_id}/mobile-apps", status_code=201, dependencies=[Depends(_require_admin)])
+    async def api_create_mobile_app(project_id: int, request: Request):
+        """Create a new mobile app asset for a project."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        name = (data.get("name") or "").strip()
+        platform = (data.get("platform") or "").strip().lower()
+        package_name = data.get("package_name")
+        app_store_url = data.get("app_store_url")
+        store_id = data.get("store_id")
+        notes = data.get("notes")
+
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if platform not in ("android", "ios"):
+            raise HTTPException(status_code=400, detail="platform must be 'android' or 'ios'")
+
+        try:
+            app = db.create_mobile_app(
+                company_id=project_id,
+                name=name,
+                platform=platform,
+                package_name=package_name,
+                app_store_url=app_store_url,
+                store_id=store_id,
+                notes=notes,
+            )
+            return {
+                "id": app.id,
+                "name": app.name,
+                "platform": app.platform,
+                "package_name": app.package_name,
+                "app_store_url": app.app_store_url,
+                "store_id": app.store_id,
+                "is_active": app.is_active,
+                "notes": app.notes,
+                "created_at": app.created_at.isoformat() if app.created_at else None,
+            }
+        except Exception as exc:
+            logger.error("api_create_mobile_app error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.patch("/api/mobile-apps/{app_id}", dependencies=[Depends(_require_admin)])
+    async def api_update_mobile_app(app_id: int, request: Request):
+        """Update a mobile app's attributes."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        try:
+            app = db.update_mobile_app(app_id, **data)
+            if app is None:
+                raise HTTPException(status_code=404, detail="Mobile app not found")
+            return {
+                "id": app.id,
+                "name": app.name,
+                "platform": app.platform,
+                "package_name": app.package_name,
+                "app_store_url": app.app_store_url,
+                "store_id": app.store_id,
+                "is_active": app.is_active,
+                "notes": app.notes,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_update_mobile_app error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/api/mobile-apps/{app_id}", dependencies=[Depends(_require_admin)])
+    async def api_delete_mobile_app(app_id: int):
+        """Delete a mobile app."""
+        try:
+            deleted = db.delete_mobile_app(app_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Mobile app not found")
+            return {"deleted": True, "id": app_id}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_delete_mobile_app error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — API Assets management
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/projects/{project_id}/api-assets")
+    async def api_list_api_assets(project_id: int):
+        """List all API assets for a project."""
+        try:
+            assets = db.get_all_api_assets(company_id=project_id)
+            return [
+                {
+                    "id": asset.id,
+                    "name": asset.name,
+                    "base_url": asset.base_url,
+                    "api_type": asset.api_type,
+                    "specification_url": asset.specification_url,
+                    "authentication": asset.authentication,
+                    "is_public": asset.is_public,
+                    "is_active": asset.is_active,
+                    "notes": asset.notes,
+                    "last_scan": asset.last_scan.isoformat() if asset.last_scan else None,
+                    "created_at": asset.created_at.isoformat() if asset.created_at else None,
+                }
+                for asset in assets
+            ]
+        except Exception as exc:
+            logger.error("api_list_api_assets error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/projects/{project_id}/api-assets", status_code=201, dependencies=[Depends(_require_admin)])
+    async def api_create_api_asset(project_id: int, request: Request):
+        """Create a new API asset for a project."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        name = (data.get("name") or "").strip()
+        base_url = (data.get("base_url") or "").strip()
+        api_type = (data.get("api_type") or "").strip().lower()
+        specification_url = data.get("specification_url")
+        authentication = data.get("authentication")
+        is_public = bool(data.get("is_public", False))
+        notes = data.get("notes")
+
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if not base_url:
+            raise HTTPException(status_code=400, detail="base_url is required")
+        if api_type not in ("rest", "graphql", "grpc", "soap"):
+            raise HTTPException(status_code=400, detail="api_type must be one of: rest, graphql, grpc, soap")
+
+        try:
+            asset = db.create_api_asset(
+                company_id=project_id,
+                name=name,
+                base_url=base_url,
+                api_type=api_type,
+                specification_url=specification_url,
+                authentication=authentication,
+                is_public=is_public,
+                notes=notes,
+            )
+            return {
+                "id": asset.id,
+                "name": asset.name,
+                "base_url": asset.base_url,
+                "api_type": asset.api_type,
+                "specification_url": asset.specification_url,
+                "authentication": asset.authentication,
+                "is_public": asset.is_public,
+                "is_active": asset.is_active,
+                "notes": asset.notes,
+                "created_at": asset.created_at.isoformat() if asset.created_at else None,
+            }
+        except Exception as exc:
+            logger.error("api_create_api_asset error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.patch("/api/api-assets/{asset_id}", dependencies=[Depends(_require_admin)])
+    async def api_update_api_asset(asset_id: int, request: Request):
+        """Update an API asset's attributes."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        try:
+            asset = db.update_api_asset(asset_id, **data)
+            if asset is None:
+                raise HTTPException(status_code=404, detail="API asset not found")
+            return {
+                "id": asset.id,
+                "name": asset.name,
+                "base_url": asset.base_url,
+                "api_type": asset.api_type,
+                "specification_url": asset.specification_url,
+                "authentication": asset.authentication,
+                "is_public": asset.is_public,
+                "is_active": asset.is_active,
+                "notes": asset.notes,
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_update_api_asset error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/api/api-assets/{asset_id}", dependencies=[Depends(_require_admin)])
+    async def api_delete_api_asset(asset_id: int):
+        """Delete an API asset."""
+        try:
+            deleted = db.delete_api_asset(asset_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="API asset not found")
+            return {"deleted": True, "id": asset_id}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_delete_api_asset error: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
 
     return app

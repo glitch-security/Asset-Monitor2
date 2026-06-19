@@ -78,6 +78,10 @@ class VerificationConfig(BaseModel):
     takeover_check: bool = True
     technology_detection: bool = True
     screenshot: bool = False
+    # DNS security analysis options
+    dnssec_check: bool = True
+    email_security_check: bool = True
+    nameserver_security_check: bool = True
 
 
 # ---------------------------------------------------------------------------

@@ -329,6 +329,16 @@ class SchedManager:
                 for fqdn in discovered_fqdns:
                     ex = self._db.get_subdomain(fqdn)
                     if ex:
+                        # Get latest scan for DNS security data
+                        latest_scan = self._db.get_latest_subdomain_scan(ex.id)
+                        dnssec_info = None
+                        email_security = None
+                        nameserver_security = None
+                        if latest_scan:
+                            dnssec_info = latest_scan.dnssec_info
+                            email_security = latest_scan.email_security
+                            nameserver_security = latest_scan.nameserver_security
+
                         old_states[fqdn] = {
                             "live": ex.status == "alive",
                             "a_records": list(ex.ip_addresses or []),
@@ -340,6 +350,9 @@ class SchedManager:
                                 {"service": "unknown", "confidence": "unknown"}
                                 if ex.takeover_vulnerable else None
                             ),
+                            "dnssec_info": dnssec_info,
+                            "email_security": email_security,
+                            "nameserver_security": nameserver_security,
                         }
 
                 results = await vm.verify_batch(discovered_fqdns, dom.id, "enumeration")
