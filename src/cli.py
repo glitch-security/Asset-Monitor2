@@ -553,5 +553,6 @@ def daemon(ctx: click.Context) -> None:
         port=config.web.port if config.web.enabled else 5000,
         log_level="warning",
         access_log=False,
-        ssl=ssl_config,
+        ssl_keyfile=config.web.ssl_key_path if config.web.ssl_enabled else None,
+        ssl_certfile=config.web.ssl_cert_path if config.web.ssl_enabled else None,
     )

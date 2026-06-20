@@ -1003,7 +1003,7 @@ def build_app(
     # ────────────────────────────────────────────────────────────────────────
 
     @app.get("/api/projects")
-    async def api_list_projects(user: str = Depends(_require_auth)) -> JSONResponse:
+    async def api_list_projects(user: str = Depends(_require_admin)) -> JSONResponse:
         """List all projects/companies with summary stats."""
         try:
             companies = db.get_all_companies()
