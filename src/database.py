@@ -27,6 +27,9 @@ from sqlalchemy import (
     func,
     select,
     update,
+    CheckConstraint,
+    UniqueConstraint,
+    Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, selectinload, sessionmaker
 from sqlalchemy.types import TypeDecorator
@@ -457,6 +460,98 @@ class AppSetting(Base):
 
     def __repr__(self) -> str:
         return f"<AppSetting key={self.key!r}>"
+
+
+class GitHubMonitoredRepo(Base):
+    """GitHub repositories under monitoring."""
+
+    __tablename__ = "github_monitored_repos"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    organization: str = Column(String(255), nullable=False, index=True)
+    repository: str = Column(String(255), nullable=False, index=True)
+    full_name: str = Column(String(511), nullable=False)  # org/repo
+    monitor_secrets: bool = Column(Boolean, default=True, nullable=False)
+    monitor_dangerous_functions: bool = Column(Boolean, default=True, nullable=False)
+    monitor_issues: bool = Column(Boolean, default=True, nullable=False)
+    monitor_wiki: bool = Column(Boolean, default=True, nullable=False)
+    monitor_gists: bool = Column(Boolean, default=False, nullable=False)
+    last_commit_hash: Optional[str] = Column(String(64), nullable=True)
+    last_scan_timestamp: Optional[datetime] = Column(DateTime(timezone=True), nullable=True)
+    alert_on_new_repos: bool = Column(Boolean, default=False, nullable=False)
+    created_at: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at: datetime = Column(
+        DateTime(timezone=True),
+        default=_utcnow,
+        onupdate=_utcnow,
+        nullable=False
+    )
+
+    # Relationship
+    findings: List["GitHubFinding"] = relationship(
+        "GitHubFinding",
+        back_populates="repo",
+        cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint('organization', 'repository', name='uix_github_repo'),
+        Index('ix_github_full_name', 'full_name'),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GitHubMonitoredRepo id={self.id} full_name={self.full_name!r}>"
+
+
+class GitHubFinding(Base):
+    """Security findings from GitHub monitoring."""
+
+    __tablename__ = "github_findings"
+
+    id: int = Column(Integer, primary_key=True, autoincrement=True)
+    repo_id: int = Column(
+        Integer,
+        ForeignKey('github_monitored_repos.id', ondelete='CASCADE'),
+        nullable=False,
+        index=True
+    )
+    finding_type: str = Column(String(50), nullable=False, index=True)  # 'secret', 'dangerous_function', 'sensitive_data'
+    severity: str = Column(String(20), nullable=False, index=True)  # CRITICAL, HIGH, MEDIUM, LOW
+    file_path: str = Column(String(1024), nullable=False)
+    line_number: Optional[int] = Column(Integer, nullable=True)
+    commit_hash: Optional[str] = Column(String(64), nullable=True, index=True)
+    commit_url: Optional[str] = Column(String(512), nullable=True)
+    author: Optional[str] = Column(String(255), nullable=True)
+    timestamp: datetime = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
+    pattern_name: str = Column(String(255), nullable=False)
+    matched_text: Optional[str] = Column(Text, nullable=True)
+    context_before: Optional[str] = Column(Text, nullable=True)
+    context_after: Optional[str] = Column(Text, nullable=True)
+    false_positive: bool = Column(Boolean, default=False, nullable=False, index=True)
+    reviewed: bool = Column(Boolean, default=False, nullable=False)
+    notes: Optional[str] = Column(Text, nullable=True)
+
+    # Relationship
+    repo: "GitHubMonitoredRepo" = relationship("GitHubMonitoredRepo", back_populates="findings")
+
+    __table_args__ = (
+        Index('ix_github_finding_type_severity', 'finding_type', 'severity'),
+        Index('ix_github_finding_timestamp', 'timestamp'),
+        CheckConstraint(
+            "severity IN ('CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO')",
+            name='ck_github_severity'
+        ),
+        CheckConstraint(
+            "finding_type IN ('secret', 'dangerous_function', 'sensitive_data')",
+            name='ck_github_finding_type'
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GitHubFinding id={self.id} type={self.finding_type!r} "
+            f"severity={self.severity!r}>"
+        )
 
 
 def _apply_config_overrides(model: Any, overrides: Dict[str, Any]) -> None:
@@ -2055,3 +2150,135 @@ class DatabaseManager:
         temp_password = _secrets.token_urlsafe(12)
         self.set_user("admin", _hash(temp_password), "admin")
         return temp_password
+
+    # ------------------------------------------------------------------
+    # GitHub monitoring operations
+    # ------------------------------------------------------------------
+
+    def add_github_repo(self, organization: str, repository: str, **kwargs: Any) -> int:
+        """Add a GitHub repository to monitoring. Returns repo ID."""
+        full_name = f"{organization}/{repository}"
+        with self.get_session() as session:
+            # Check if already exists
+            existing = session.scalar(
+                select(GitHubMonitoredRepo).where(
+                    GitHubMonitoredRepo.organization == organization,
+                    GitHubMonitoredRepo.repository == repository
+                )
+            )
+            if existing:
+                return existing.id
+
+            repo = GitHubMonitoredRepo(
+                organization=organization,
+                repository=repository,
+                full_name=full_name,
+                **kwargs
+            )
+            session.add(repo)
+            session.flush()
+            session.refresh(repo)
+            return repo.id
+
+    def get_github_repo(self, repo_id: int) -> Optional[GitHubMonitoredRepo]:
+        """Get a GitHub repo by ID."""
+        with self.get_session() as session:
+            return session.scalar(
+                select(GitHubMonitoredRepo).where(GitHubMonitoredRepo.id == repo_id)
+            )
+
+    def list_github_repos(self, organization: Optional[str] = None) -> List[GitHubMonitoredRepo]:
+        """List all monitored GitHub repos, optionally filtered by organization."""
+        with self.get_session() as session:
+            query = select(GitHubMonitoredRepo)
+            if organization:
+                query = query.where(GitHubMonitoredRepo.organization == organization)
+            return list(
+                session.scalars(
+                    query.order_by(GitHubMonitoredRepo.created_at.desc())
+                ).all()
+            )
+
+    def update_github_repo_last_scan(
+        self, repo_id: int, commit_hash: Optional[str] = None
+    ) -> None:
+        """Update last scan timestamp and commit hash."""
+        with self.get_session() as session:
+            repo = session.get(GitHubMonitoredRepo, repo_id)
+            if repo:
+                repo.last_scan_timestamp = _utcnow()
+                if commit_hash:
+                    repo.last_commit_hash = commit_hash
+
+    def add_github_finding(self, repo_id: int, finding: Dict[str, Any]) -> int:
+        """Add a GitHub finding. Returns finding ID."""
+        with self.get_session() as session:
+            github_finding = GitHubFinding(
+                repo_id=repo_id,
+                finding_type=finding.get('finding_type', 'secret'),
+                severity=finding.get('severity', 'MEDIUM'),
+                file_path=finding.get('file_path', ''),
+                line_number=finding.get('line_number'),
+                commit_hash=finding.get('commit_hash'),
+                commit_url=finding.get('commit_url'),
+                author=finding.get('author'),
+                pattern_name=finding.get('pattern_name', ''),
+                matched_text=finding.get('matched_text'),
+                context_before=finding.get('context_before'),
+                context_after=finding.get('context_after'),
+            )
+            session.add(github_finding)
+            session.flush()
+            session.refresh(github_finding)
+            return github_finding.id
+
+    def get_github_findings(
+        self,
+        repo_id: Optional[int] = None,
+        finding_type: Optional[str] = None,
+        severity: Optional[str] = None,
+        unreviewed_only: bool = False,
+        limit: int = 100,
+    ) -> List[GitHubFinding]:
+        """Get GitHub findings with optional filters."""
+        with self.get_session() as session:
+            query = select(GitHubFinding).join(GitHubMonitoredRepo)
+
+            if repo_id:
+                query = query.where(GitHubFinding.repo_id == repo_id)
+            if finding_type:
+                query = query.where(GitHubFinding.finding_type == finding_type)
+            if severity:
+                query = query.where(GitHubFinding.severity == severity)
+            if unreviewed_only:
+                query = query.where(GitHubFinding.reviewed == False)  # noqa: E712
+
+            return list(
+                session.scalars(
+                    query.order_by(GitHubFinding.timestamp.desc()).limit(limit)
+                ).all()
+            )
+
+    def mark_finding_false_positive(self, finding_id: int, is_fp: bool = True) -> None:
+        """Mark a finding as false positive (or not)."""
+        with self.get_session() as session:
+            finding = session.get(GitHubFinding, finding_id)
+            if finding:
+                finding.false_positive = is_fp
+                finding.reviewed = True
+
+    def mark_finding_reviewed(self, finding_id: int) -> None:
+        """Mark a finding as reviewed."""
+        with self.get_session() as session:
+            finding = session.get(GitHubFinding, finding_id)
+            if finding:
+                finding.reviewed = True
+
+    def delete_github_repo(self, repo_id: int) -> bool:
+        """Delete a GitHub repo and all its findings (cascade)."""
+        with self.get_session() as session:
+            repo = session.get(GitHubMonitoredRepo, repo_id)
+            if repo:
+                session.delete(repo)
+                return True
+            return False

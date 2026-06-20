@@ -34,6 +34,12 @@ Routes:
   POST /api/users                   — create a user (admin)
   DELETE /api/users/{username}      — delete a user (admin)
   POST /api/users/{username}/password — change a user's password
+  GET  /api/github/repos            — list monitored GitHub repositories
+  POST /api/github/repos            — add GitHub repository to monitoring (admin)
+  DELETE /api/github/repos/{id}     — delete GitHub repository (admin)
+  GET  /api/github/findings         — get GitHub findings with filters
+  PUT  /api/github/findings/{id}/review — mark finding as reviewed (admin)
+  POST /api/github/scan/{id}        — trigger immediate GitHub repo scan (admin)
 """
 
 from __future__ import annotations
@@ -47,7 +53,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1351,6 +1357,199 @@ def build_app(
         except Exception as exc:
             logger.error("api_delete_api_asset error: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — GitHub Monitoring
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/github/repos")
+    async def api_list_github_repos():
+        """List all monitored GitHub repositories."""
+        try:
+            repos = db.list_github_repos()
+            return {
+                "repos": [
+                    {
+                        "id": r.id,
+                        "organization": r.organization,
+                        "repository": r.repository,
+                        "full_name": r.full_name,
+                        "monitor_secrets": r.monitor_secrets,
+                        "monitor_dangerous_functions": r.monitor_dangerous_functions,
+                        "monitor_issues": r.monitor_issues,
+                        "monitor_wiki": r.monitor_wiki,
+                        "monitor_gists": r.monitor_gists,
+                        "alert_on_new_repos": r.alert_on_new_repos,
+                        "last_scan": r.last_scan_timestamp.isoformat() if r.last_scan_timestamp else None,
+                        "last_commit": r.last_commit_hash,
+                        "created_at": r.created_at.isoformat() if r.created_at else None,
+                    }
+                    for r in repos
+                ]
+            }
+        except Exception as exc:
+            logger.error("api_list_github_repos error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/github/repos", status_code=201, dependencies=[Depends(_require_admin)])
+    async def api_add_github_repo(request: Request):
+        """Add a GitHub repository to monitoring."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        org = (data.get("organization") or "").strip()
+        repo = (data.get("repository") or "").strip()
+
+        if not org or not repo:
+            raise HTTPException(status_code=400, detail="organization and repository are required")
+
+        try:
+            repo_id = db.add_github_repo(
+                organization=org,
+                repository=repo,
+                monitor_secrets=data.get("monitor_secrets", True),
+                monitor_dangerous_functions=data.get("monitor_dangerous_functions", True),
+                monitor_issues=data.get("monitor_issues", True),
+                monitor_wiki=data.get("monitor_wiki", True),
+                monitor_gists=data.get("monitor_gists", False),
+                alert_on_new_repos=data.get("alert_on_new_repos", False),
+            )
+            return {"repo_id": repo_id, "status": "added"}
+        except Exception as exc:
+            logger.error("api_add_github_repo error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.delete("/api/github/repos/{repo_id}", dependencies=[Depends(_require_admin)])
+    async def api_delete_github_repo(repo_id: int):
+        """Delete a GitHub repository from monitoring."""
+        try:
+            deleted = db.delete_github_repo(repo_id)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Repository not found")
+            return {"deleted": True, "id": repo_id}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_delete_github_repo error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.get("/api/github/findings")
+    async def api_get_github_findings(request: Request):
+        """Get GitHub findings with optional filters."""
+        try:
+            # Parse query parameters
+            repo_id_str = request.query_params.get("repo_id")
+            repo_id = int(repo_id_str) if repo_id_str else None
+
+            finding_type = request.query_params.get("finding_type")
+            if finding_type and finding_type not in ("secret", "dangerous_function", "sensitive_data"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="finding_type must be one of: secret, dangerous_function, sensitive_data"
+                )
+
+            severity = request.query_params.get("severity")
+            if severity and severity not in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="severity must be one of: CRITICAL, HIGH, MEDIUM, LOW, INFO"
+                )
+
+            unreviewed_only_str = request.query_params.get("unreviewed_only", "false").lower()
+            unreviewed_only = unreviewed_only_str in ("true", "1", "yes")
+
+            try:
+                limit = int(request.query_params.get("limit", 100))
+            except ValueError:
+                limit = 100
+            limit = min(max(limit, 1), 1000)  # Clamp between 1 and 1000
+
+            findings = db.get_github_findings(
+                repo_id=repo_id,
+                finding_type=finding_type,
+                severity=severity,
+                unreviewed_only=unreviewed_only,
+                limit=limit,
+            )
+
+            return {
+                "findings": [
+                    {
+                        "id": f.id,
+                        "repo_id": f.repo_id,
+                        "finding_type": f.finding_type,
+                        "severity": f.severity,
+                        "file_path": f.file_path,
+                        "line_number": f.line_number,
+                        "pattern_name": f.pattern_name,
+                        "matched_text": (
+                            f.matched_text[:100] + "..."
+                            if f.matched_text and len(f.matched_text) > 100
+                            else f.matched_text
+                        ),
+                        "context_before": f.context_before,
+                        "context_after": f.context_after,
+                        "commit_hash": f.commit_hash,
+                        "commit_url": f.commit_url,
+                        "author": f.author,
+                        "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+                        "false_positive": f.false_positive,
+                        "reviewed": f.reviewed,
+                        "notes": f.notes,
+                    }
+                    for f in findings
+                ],
+                "count": len(findings),
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("api_get_github_findings error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.put("/api/github/findings/{finding_id}/review", dependencies=[Depends(_require_admin)])
+    async def api_review_finding(finding_id: int, request: Request):
+        """Mark a finding as reviewed (and optionally as false positive)."""
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        is_fp = data.get("false_positive", False)
+
+        try:
+            if is_fp:
+                db.mark_finding_false_positive(finding_id, is_fp)
+            else:
+                db.mark_finding_reviewed(finding_id)
+
+            return {"status": "reviewed"}
+        except Exception as exc:
+            logger.error("api_review_finding error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/api/github/scan/{repo_id}", status_code=202, dependencies=[Depends(_require_admin)])
+    async def api_trigger_github_scan(repo_id: int, background_tasks: BackgroundTasks):
+        """Trigger an immediate scan of a GitHub repository."""
+        # Verify repo exists
+        repo = db.get_github_repo(repo_id)
+        if not repo:
+            raise HTTPException(status_code=404, detail="Repository not found")
+
+        # Run scan in background
+        async def run_scan():
+            from src.github.monitor import GitHubMonitor
+            try:
+                gh_token = config.github.token if hasattr(config, 'github') else None
+                monitor = GitHubMonitor(db=db, github_token=gh_token)
+                await monitor.scan_repository(repo_id)
+                logger.info(f"Background scan completed for repo {repo_id}")
+            except Exception as exc:
+                logger.error(f"Background scan failed for repo {repo_id}: %s", exc)
+
+        background_tasks.add_task(run_scan)
+
+        return {"status": "scan_started", "repo_id": repo_id}
 
     return app
 

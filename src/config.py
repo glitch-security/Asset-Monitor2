@@ -105,6 +105,24 @@ class MonitoringConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# GitHub monitoring
+# ---------------------------------------------------------------------------
+
+class GitHubConfig(BaseModel):
+    """GitHub monitoring configuration."""
+    token: Optional[str] = None
+    enabled: bool = False
+    scan_interval_hours: int = 24
+    monitor_secrets: bool = True
+    monitor_dangerous_functions: bool = True
+    monitor_issues: bool = True
+    monitor_wiki: bool = True
+    monitor_gists: bool = False
+    alert_on_severity: str = "MEDIUM"
+    auto_discover_organizations: List[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # API keys
 # ---------------------------------------------------------------------------
 
@@ -226,6 +244,7 @@ class AppConfig(BaseModel):
     attack_surface: AttackSurfaceConfig = Field(default_factory=AttackSurfaceConfig)
     scope: ScopeConfig = Field(default_factory=ScopeConfig)
     web: WebConfig = Field(default_factory=WebConfig)
+    github: GitHubConfig = Field(default_factory=GitHubConfig)
     api_keys: ApiKeysConfig = Field(default_factory=ApiKeysConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
 

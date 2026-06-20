@@ -167,6 +167,17 @@ class SchedManager:
         except Exception as exc:
             logger.error("Port scanning failed: %s", exc, exc_info=True)
 
+        # ── 3.5. GitHub monitoring ────────────────────────────────────────────
+        try:
+            gh_result = await self._run_github_monitoring()
+            if gh_result and gh_result.get('total_findings', 0) > 0:
+                logger.info(
+                    "GitHub monitoring found %d finding(s)",
+                    gh_result.get('total_findings', 0)
+                )
+        except Exception as exc:
+            logger.error("GitHub monitoring failed: %s", exc, exc_info=True)
+
         # ── 4. Dispatch notifications ────────────────────────────────────────
         events_by_domain = self._group_events_by_domain(all_new_events, all_domains)
         for dom_name, dom_events in events_by_domain.items():
@@ -557,3 +568,33 @@ class SchedManager:
                 grouped["unknown"].append(ev)
 
         return {k: v for k, v in grouped.items() if v}
+
+    # ── GitHub monitoring ─────────────────────────────────────────────────────
+
+    async def _run_github_monitoring(self) -> Optional[dict]:
+        """Run GitHub monitoring if enabled."""
+        if not self._config.github.enabled:
+            return None
+
+        logger.info("Starting GitHub monitoring...")
+
+        try:
+            from src.github.monitor import GitHubMonitor
+        except ImportError:
+            logger.debug("github.monitor module not available — skipping GitHub monitoring")
+            return None
+
+        monitor = GitHubMonitor(
+            db=self._db,
+            github_token=self._config.github.token or self._config.api_keys.github_token or None
+        )
+
+        result = await monitor.scan_all_repos()
+
+        logger.info(
+            "GitHub monitoring complete: %d finding(s) from %d repo(s)",
+            result.get('total_findings', 0),
+            result.get('total_repos', 0)
+        )
+
+        return result
