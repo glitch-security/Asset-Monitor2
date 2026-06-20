@@ -1003,7 +1003,7 @@ def build_app(
     # ────────────────────────────────────────────────────────────────────────
 
     @app.get("/api/projects")
-    async def api_list_projects():
+    async def api_list_projects(user: str = Depends(_require_auth)) -> JSONResponse:
         """List all projects/companies with summary stats."""
         try:
             companies = db.get_all_companies()
@@ -1028,7 +1028,7 @@ def build_app(
                         "api_assets": api_count,
                     }
                 })
-            return result
+            return JSONResponse(result)
         except Exception as exc:
             logger.error("api_list_projects error: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
@@ -1550,6 +1550,72 @@ def build_app(
         background_tasks.add_task(run_scan)
 
         return {"status": "scan_started", "repo_id": repo_id}
+
+    # ────────────────────────────────────────────────────────────────────────
+    # API — GitHub Configuration
+    # ────────────────────────────────────────────────────────────────────────
+
+    @app.get("/api/config/github")
+    async def api_get_github_config(user: str = Depends(_require_admin)) -> JSONResponse:
+        """Get current GitHub configuration (without exposing the full token)."""
+        if not hasattr(config, 'github'):
+            return JSONResponse({"enabled": False, "token_configured": False})
+
+        return JSONResponse({
+            "enabled": config.github.enabled,
+            "token_configured": bool(config.github.token),
+            "scan_interval_hours": config.github.scan_interval_hours,
+            "monitor_secrets": config.github.monitor_secrets,
+            "monitor_dangerous_functions": config.github.monitor_dangerous_functions,
+            "monitor_issues": config.github.monitor_issues,
+            "monitor_wiki": config.github.monitor_wiki,
+            "monitor_gists": config.github.monitor_gists,
+            "alert_on_severity": config.github.alert_on_severity,
+            "auto_discover_organizations": config.github.auto_discover_organizations,
+        })
+
+    @app.put("/api/config/github")
+    async def api_update_github_config(payload: dict, user: str = Depends(_require_admin)) -> JSONResponse:
+        """Update GitHub configuration."""
+        try:
+            # Store token in database if provided
+            if "token" in payload and payload["token"]:
+                token = payload["token"]
+                # Store as app setting
+                existing = db.get_setting("config.github.token")
+                if existing:
+                    db.update_setting("config.github.token", token)
+                else:
+                    db.add_setting("config.github.token", token)
+
+            # Store other config values
+            updates = {
+                "enabled": payload.get("enabled", False),
+                "scan_interval_hours": payload.get("scan_interval_hours", 24),
+                "monitor_secrets": payload.get("monitor_secrets", True),
+                "monitor_dangerous_functions": payload.get("monitor_dangerous_functions", True),
+                "monitor_issues": payload.get("monitor_issues", True),
+                "monitor_wiki": payload.get("monitor_wiki", True),
+                "monitor_gists": payload.get("monitor_gists", False),
+                "alert_on_severity": payload.get("alert_on_severity", "MEDIUM"),
+                "auto_discover_organizations": payload.get("auto_discover_organizations", []),
+            }
+
+            for key, value in updates.items():
+                setting_key = f"config.github.{key}"
+                existing = db.get_setting(setting_key)
+                if existing:
+                    db.update_setting(setting_key, value)
+                else:
+                    db.add_setting(setting_key, value)
+
+            # Reload config from database
+            db.apply_settings_to_config(config)
+
+            return JSONResponse({"status": "updated"})
+        except Exception as exc:
+            logger.error("api_update_github_config error: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc))
 
     return app
 

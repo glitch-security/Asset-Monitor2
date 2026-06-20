@@ -386,6 +386,7 @@
     <li class="nav-item"><a class="nav-link" data-tab="subdomains" href="#" onclick="showTab('subdomains',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="tab-badge-subs">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="headers" href="#" onclick="showTab('headers',this);return false;"><i class="bi bi-shield-check"></i> HTTP Headers <span class="badge bg-secondary ms-1" id="tab-badge-headers">0</span></a></li>
     <li class="nav-item"><a class="nav-link" data-tab="changes" href="#" onclick="showTab('changes',this);return false;"><i class="bi bi-activity"></i> Change Events <span class="badge bg-secondary ms-1" id="tab-badge-changes">0</span></a></li>
+    <li class="nav-item"><a class="nav-link" data-tab="github" href="#" onclick="showTab('github',this);return false;"><i class="bi bi-github"></i> GitHub <span class="badge bg-secondary ms-1" id="tab-badge-github">0</span></a></li>
   </ul>
 
   <!-- Tab: Targets -->
@@ -579,6 +580,99 @@
       </div>
     </div>
     <p class="text-muted mt-2" style="font-size:.72rem;"><i class="bi bi-info-circle"></i> Click the <span style="color:var(--accent);">→</span> link on any event to jump to the relevant page.</p>
+  </div>
+
+  <!-- Tab: GitHub -->
+  <div id="tab-github" class="d-none">
+    <!-- GitHub Configuration Card -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-github"></i> GitHub Configuration</span>
+        <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="openGitHubConfigModal()">
+          <i class="bi bi-gear"></i> Configure
+        </button>
+      </div>
+      <div class="card-body p-3">
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <span class="text-muted" style="font-size:.78rem;"><i class="bi bi-key me-1"></i>Token Status:</span>
+            <span id="gh-token-status" style="font-size:.78rem;color:var(--text3);">Checking...</span>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted" style="font-size:.78rem;"><i class="bi bi-toggle-on me-1"></i>Monitoring:</span>
+            <span id="gh-monitoring-status" style="font-size:.78rem;color:var(--text3);">Checking...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Repositories Card -->
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-book"></i> Monitored Repositories</span>
+        <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="openAddGitHubRepoModal()">
+          <i class="bi bi-plus-lg"></i> Add Repository
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead><tr>
+              <th>Repository</th>
+              <th>Secrets</th>
+              <th>Dangerous Functions</th>
+              <th>Issues</th>
+              <th>Wiki</th>
+              <th>Last Scan</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody id="github-repos-body"><tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Findings Card -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-exclamation-triangle"></i> Findings</span>
+        <div class="d-flex gap-2 align-items-center">
+          <select class="form-select form-select-sm" style="width:110px;font-size:.75rem;" id="gh-filter-type" onchange="loadGitHubFindings()">
+            <option value="">All types</option>
+            <option value="secret">Secrets</option>
+            <option value="dangerous_function">Dangerous Functions</option>
+            <option value="sensitive_data">Sensitive Data</option>
+          </select>
+          <select class="form-select form-select-sm" style="width:130px;font-size:.75rem;" id="gh-filter-sev" onchange="loadGitHubFindings()">
+            <option value="">All severities</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+          <div class="form-check form-switch mb-0" style="font-size:.78rem;">
+            <input class="form-check-input" type="checkbox" id="gh-unreviewed-only" checked onchange="loadGitHubFindings()">
+            <label class="form-check-label" for="gh-unreviewed-only">Unreviewed only</label>
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive" style="max-height:600px;overflow-y:auto;">
+          <table class="table table-hover mb-0">
+            <thead style="position:sticky;top:0;z-index:1;"><tr>
+              <th>Severity</th>
+              <th>Type</th>
+              <th>Repository</th>
+              <th>File</th>
+              <th>Pattern</th>
+              <th>Detected At</th>
+              <th>Actions</th>
+            </tr></thead>
+            <tbody id="github-findings-body"><tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div><!-- /main-dashboard -->
@@ -1067,6 +1161,108 @@
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- GITHUB MODALS                                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+
+<!-- Add GitHub Repository Modal -->
+<div class="modal fade modal-dark" id="addGitHubRepoModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-github"></i> Add GitHub Repository</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">ORGANIZATION</label>
+          <input type="text" class="form-control" id="gh-org" placeholder="e.g. facebook" autocomplete="off">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">REPOSITORY</label>
+          <input type="text" class="form-control" id="gh-repo" placeholder="e.g. react" autocomplete="off">
+        </div>
+        <hr class="section-sep">
+        <div class="mb-2" style="font-size:.8rem;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Monitoring Options</div>
+        <div class="row g-2">
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-monitor-secrets" checked>
+              <label class="form-check-label" for="gh-monitor-secrets">Secrets</label>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-monitor-dangerous" checked>
+              <label class="form-check-label" for="gh-monitor-dangerous">Dangerous Functions</label>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-monitor-issues" checked>
+              <label class="form-check-label" for="gh-monitor-issues">Issues</label>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-monitor-wiki" checked>
+              <label class="form-check-label" for="gh-monitor-wiki">Wiki</label>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-monitor-gists">
+              <label class="form-check-label" for="gh-monitor-gists">Gists</label>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="gh-alert-new">
+              <label class="form-check-label" for="gh-alert-new">Alert on New</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-text mt-2">Select what to monitor in this repository. Changes will be detected on the next scan.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="gh-add-repo-btn" onclick="submitAddGitHubRepo()">
+          <i class="bi bi-plus-lg"></i> Add Repository
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GitHub Config Modal -->
+<div class="modal fade modal-dark" id="githubConfigModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-gear"></i> GitHub Configuration</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">GITHUB TOKEN</label>
+          <input type="password" class="form-control" id="gh-config-token" placeholder="ghp_..." autocomplete="off">
+          <div class="form-text">Personal Access Token with repo scope. Create at github.com/settings/tokens</div>
+        </div>
+        <div class="form-check form-switch mb-3">
+          <input class="form-check-input" type="checkbox" id="gh-config-enabled">
+          <label class="form-check-label" for="gh-config-enabled">Enable GitHub Monitoring</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveGitHubConfig()">
+          <i class="bi bi-check-lg"></i> Save Configuration
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
@@ -1180,6 +1376,7 @@ function showTab(name, el) {
   else if (name === 'changes') loadChanges();
   else if (name === 'profiles') loadProfiles();
   else if (name === 'projects') loadProjects();
+  else if (name === 'github') { loadGitHubRepos(); loadGitHubFindings(); }
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────
@@ -1964,7 +2161,7 @@ function startCountdown() {
 
 async function refreshAll(manual) {
   if (manual) document.getElementById('refresh-timer').textContent = '…';
-  await Promise.all([loadSummary(), loadTargets(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges(), loadProfiles()]);
+  await Promise.all([loadSummary(), loadTargets(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges(), loadProfiles(), loadGitHubRepos()]);
   startCountdown();
   // Refresh domain detail if open
   if (_ddDomainId) openDomainDetail(_ddDomainId, _ddDomainName);
@@ -2619,10 +2816,310 @@ async function viewProjectDetails(id) {
   // TODO: Implement detailed project view with tabs for domains, mobile apps, API assets
 }
 
+// ── GitHub ─────────────────────────────────────────────────────────────────────
+let _githubRepos = [];
+let _githubFindings = [];
+
+async function loadGitHubRepos() {
+  try {
+    const r = await fetch('/api/github/repos');
+    const d = await r.json();
+    _githubRepos = d.repos || [];
+    document.getElementById('tab-badge-github').textContent = _githubRepos.length;
+    renderGitHubRepos();
+    updateGitHubStatus();
+  } catch(e) {
+    console.error('github repos', e);
+  }
+}
+
+function renderGitHubRepos() {
+  const tbody = document.getElementById('github-repos-body');
+  if (!_githubRepos.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-inbox"></i><br><small>No repositories monitored yet. Click "Add Repository" to get started.</small></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = _githubRepos.map(r => {
+    const badges = [
+      r.monitor_secrets ? '<span class="badge bg-secondary me-1" style="font-size:.65rem;">Secrets</span>' : '',
+      r.monitor_dangerous_functions ? '<span class="badge bg-secondary me-1" style="font-size:.65rem;">Dangerous Funcs</span>' : '',
+      r.monitor_issues ? '<span class="badge bg-secondary me-1" style="font-size:.65rem;">Issues</span>' : '',
+      r.monitor_wiki ? '<span class="badge bg-secondary me-1" style="font-size:.65rem;">Wiki</span>' : '',
+      r.monitor_gists ? '<span class="badge bg-secondary me-1" style="font-size:.65rem;">Gists</span>' : '',
+    ].filter(Boolean).join(' ');
+
+    return `<tr>
+      <td>
+        <a href="https://github.com/${esc(r.full_name)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">
+          <i class="bi bi-github"></i> ${esc(r.full_name)}
+        </a>
+      </td>
+      <td>${r.monitor_secrets ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+      <td>${r.monitor_dangerous_functions ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+      <td>${r.monitor_issues ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+      <td>${r.monitor_wiki ? '<i class="bi bi-check-circle-fill text-success"></i>' : '<i class="bi bi-x-circle text-muted"></i>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${r.last_scan ? fmtDate(r.last_scan) : 'Never'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-primary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="triggerGitHubScan(${r.id})" title="Scan now">
+          <i class="bi bi-play-fill"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;" onclick="deleteGitHubRepo(${r.id},'${esc(r.full_name)}')" title="Delete">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadGitHubFindings() {
+  try {
+    const type = document.getElementById('gh-filter-type').value || '';
+    const sev = document.getElementById('gh-filter-sev').value || '';
+    const unreviewed = document.getElementById('gh-unreviewed-only').checked;
+
+    let url = '/api/github/findings?limit=100';
+    if (type) url += '&finding_type=' + encodeURIComponent(type);
+    if (sev) url += '&severity=' + encodeURIComponent(sev);
+    if (unreviewed) url += '&unreviewed_only=true';
+
+    const r = await fetch(url);
+    const d = await r.json();
+    _githubFindings = d.findings || [];
+    renderGitHubFindings();
+  } catch(e) {
+    console.error('github findings', e);
+  }
+}
+
+function renderGitHubFindings() {
+  const tbody = document.getElementById('github-findings-body');
+  if (!_githubFindings.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No findings found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = _githubFindings.map(f => {
+    const repo = _githubRepos.find(r => r.id === f.repo_id);
+    const repoName = repo ? repo.full_name : 'Unknown';
+    const reviewedBadge = f.reviewed
+      ? '<span class="badge bg-secondary" style="font-size:.6rem;">Reviewed</span>'
+      : '<span class="badge bg-warning text-dark" style="font-size:.6rem;">New</span>';
+
+    return `<tr>
+      <td>${sevBadge(f.severity)}</td>
+      <td><code style="font-size:.7rem;color:var(--text3);">${esc(f.finding_type)}</code></td>
+      <td><a href="https://github.com/${esc(repoName)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:.75rem;">${esc(repoName)}</a></td>
+      <td>
+        ${f.commit_url
+          ? `<a href="${esc(f.commit_url)}" target="_blank" rel="noopener" style="font-size:.75rem;color:var(--text2);">${esc(f.file_path)}:${f.line_number}</a>`
+          : `<span style="font-size:.75rem;color:var(--text3);">${esc(f.file_path)}:${f.line_number}</span>`}
+      </td>
+      <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.pattern_name)}">${esc(f.pattern_name)}</td>
+      <td class="text-muted" style="font-size:.75rem;">${f.timestamp ? fmtDate(f.timestamp) : '—'}</td>
+      <td>
+        ${!f.reviewed ? `
+          <button class="btn btn-xs btn-outline-success me-1" style="font-size:.65rem;padding:1px 5px;" onclick="markFindingReviewed(${f.id})" title="Mark as reviewed">
+            <i class="bi bi-check"></i>
+          </button>
+          <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.65rem;padding:1px 5px;" onclick="markFindingFalsePositive(${f.id})" title="Mark as false positive">
+            <i class="bi bi-x"></i>
+          </button>
+        ` : reviewedBadge}
+        ${f.matched_text ? `<button class="btn btn-xs btn-outline-info" style="font-size:.65rem;padding:1px 5px;" onclick="showFindingDetails(${f.id})" title="View details"><i class="bi bi-eye"></i></button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openAddGitHubRepoModal() {
+  document.getElementById('gh-org').value = '';
+  document.getElementById('gh-repo').value = '';
+  document.getElementById('gh-monitor-secrets').checked = true;
+  document.getElementById('gh-monitor-dangerous').checked = true;
+  document.getElementById('gh-monitor-issues').checked = true;
+  document.getElementById('gh-monitor-wiki').checked = true;
+  document.getElementById('gh-monitor-gists').checked = false;
+  document.getElementById('gh-alert-new').checked = false;
+  new bootstrap.Modal(document.getElementById('addGitHubRepoModal')).show();
+}
+
+async function submitAddGitHubRepo() {
+  const org = document.getElementById('gh-org').value.trim();
+  const repo = document.getElementById('gh-repo').value.trim();
+  if (!org || !repo) {
+    showToast('Organization and repository are required', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('gh-add-repo-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Adding...';
+
+  try {
+    const r = await _mfetch('/api/github/repos', {
+      method: 'POST',
+      body: JSON.stringify({
+        organization: org,
+        repository: repo,
+        monitor_secrets: document.getElementById('gh-monitor-secrets').checked,
+        monitor_dangerous_functions: document.getElementById('gh-monitor-dangerous').checked,
+        monitor_issues: document.getElementById('gh-monitor-issues').checked,
+        monitor_wiki: document.getElementById('gh-monitor-wiki').checked,
+        monitor_gists: document.getElementById('gh-monitor-gists').checked,
+        alert_on_new_repos: document.getElementById('gh-alert-new').checked,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    bootstrap.Modal.getInstance(document.getElementById('addGitHubRepoModal')).hide();
+    showToast(`Repository ${org}/${repo} added to monitoring`, 'success');
+    await loadGitHubRepos();
+  } catch(e) {
+    showToast('Failed to add repository: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus-lg"></i> Add Repository';
+  }
+}
+
+async function deleteGitHubRepo(repoId, fullName) {
+  if (!confirm(`Remove repository "${fullName}" from monitoring?\n\nThis will stop monitoring but existing findings will be preserved.`)) {
+    return;
+  }
+
+  try {
+    const r = await _mfetch(`/api/github/repos/${repoId}`, {method: 'DELETE'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    showToast(`Repository ${fullName} removed`, 'success');
+    await loadGitHubRepos();
+  } catch(e) {
+    showToast('Failed to remove repository: ' + e.message, 'danger');
+  }
+}
+
+async function triggerGitHubScan(repoId) {
+  try {
+    const r = await _mfetch(`/api/github/scan/${repoId}`, {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    showToast('GitHub scan started', 'info');
+  } catch(e) {
+    showToast('Failed to start scan: ' + e.message, 'danger');
+  }
+}
+
+async function markFindingReviewed(findingId) {
+  try {
+    const r = await _mfetch(`/api/github/findings/${findingId}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({false_positive: false}),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+
+    showToast('Finding marked as reviewed', 'success');
+    await loadGitHubFindings();
+  } catch(e) {
+    showToast('Failed to mark as reviewed: ' + e.message, 'danger');
+  }
+}
+
+async function markFindingFalsePositive(findingId) {
+  try {
+    const r = await _mfetch(`/api/github/findings/${findingId}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({false_positive: true}),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+
+    showToast('Finding marked as false positive', 'success');
+    await loadGitHubFindings();
+  } catch(e) {
+    showToast('Failed to mark as false positive: ' + e.message, 'danger');
+  }
+}
+
+function showFindingDetails(findingId) {
+  const f = _githubFindings.find(x => x.id === findingId);
+  if (!f) return;
+
+  let details = `Pattern: ${f.pattern_name}\n`;
+  details += `File: ${f.file_path}:${f.line_number}\n`;
+  if (f.matched_text) details += `\nMatched Text:\n${f.matched_text}\n`;
+  if (f.context_before) details += `\nBefore:\n${f.context_before}\n`;
+  if (f.context_after) details += `\nAfter:\n${f.context_after}\n`;
+  if (f.author) details += `\nAuthor: ${f.author}\n`;
+  if (f.commit_hash) details += `Commit: ${f.commit_hash}\n`;
+
+  alert(details); // Simple alert for now - could be improved with a modal
+}
+
+function openGitHubConfigModal() {
+  // Load current config - using the settings endpoint that already has github_token
+  fetch('/api/settings').then(r => r.json()).then(data => {
+    const keys = data.api_keys || {};
+    document.getElementById('gh-config-token').value = keys.github_token || '';
+    // For enabled status, check if any repos are monitored
+    document.getElementById('gh-config-enabled').checked = _githubRepos.length > 0;
+  }).catch(e => console.error('Failed to load github config', e));
+
+  new bootstrap.Modal(document.getElementById('githubConfigModal')).show();
+}
+
+async function saveGitHubConfig() {
+  const token = document.getElementById('gh-config-token').value.trim();
+  const enabled = document.getElementById('gh-config-enabled').checked;
+
+  try {
+    // Save token via settings API
+    const payload = {api_keys: {}};
+    if (token) {
+      payload.api_keys.github_token = token;
+    }
+
+    const r = await _mfetch('/api/settings', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.statusText);
+
+    bootstrap.Modal.getInstance(document.getElementById('githubConfigModal')).hide();
+    showToast('GitHub configuration saved', 'success');
+
+    // Update status display
+    updateGitHubStatus();
+  } catch(e) {
+    showToast('Failed to save configuration: ' + e.message, 'danger');
+  }
+}
+
+function updateGitHubStatus() {
+  // Check if token is configured
+  fetch('/api/settings').then(r => r.json()).then(data => {
+    const keys = data.api_keys || {};
+    const tokenSet = !!(keys.github_token || '');
+    document.getElementById('gh-token-status').textContent = tokenSet ? 'Configured' : 'Not set';
+    document.getElementById('gh-token-status').style.color = tokenSet ? 'var(--green)' : 'var(--red)';
+
+    const monitoringEnabled = _githubRepos.length > 0;
+    document.getElementById('gh-monitoring-status').textContent = monitoringEnabled ? 'Active' : 'No repos';
+    document.getElementById('gh-monitoring-status').style.color = monitoringEnabled ? 'var(--green)' : 'var(--text3)';
+  }).catch(e => {
+    document.getElementById('gh-token-status').textContent = 'Unknown';
+    document.getElementById('gh-monitoring-status').textContent = 'Unknown';
+  });
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 loadSession();
 loadScanStatus();
 refreshAll(true);
+updateGitHubStatus();
 </script>
 </body>
 </html>
