@@ -135,3 +135,28 @@ temp/
 *.so
 *.dylib
 *.dll
+
+# ----- Test artifacts & session files -----
+cookie.txt
+*.cookies
+login.json
+session.json
+create*.json
+*.session.json
+test_*.json
+api_test_*.json
+
+# ----- Development session docs -----
+PROGRESS.md
+SESSION_*.md
+FIXES_*.md
+IMPLEMENTATION_*.md
+FRONTEND_*.md
+WORK_INSTRUCTIONS_*.md
+BUG_BOUNTY_*.md
+*_INSTRUCTIONS.md
+*_SUMMARY.md
+
+# ----- Standalone test scripts (keep tests/ only) -----
+migrate_db.py
+test_api_fixes.py
