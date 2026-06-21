@@ -45,12 +45,45 @@ _SEVERITY_STYLE: Dict[str, str] = {
 }
 
 
-def _setup_logging(level: str = "INFO") -> None:
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
+_LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+def _setup_logging(
+    level: str = "INFO",
+    error_log_path: Optional[str] = None,
+    error_log_level: str = "WARNING",
+    error_log_max_bytes: int = 10 * 1024 * 1024,
+    error_log_backup_count: int = 5,
+) -> None:
+    """Configure console logging, plus an optional rotating file handler for
+    WARNING+/ERROR+ records so failures can be reviewed after the fact without
+    re-running a scan or scraping `docker compose logs`.
+    """
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        format=_LOG_FORMAT,
+        datefmt=_LOG_DATEFMT,
     )
+
+    if not error_log_path:
+        return
+
+    from logging.handlers import RotatingFileHandler
+
+    log_dir = os.path.dirname(error_log_path)
+    if log_dir:
+        os.makedirs(log_dir, exist_ok=True)
+
+    file_handler = RotatingFileHandler(
+        error_log_path,
+        maxBytes=error_log_max_bytes,
+        backupCount=error_log_backup_count,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(getattr(logging, error_log_level.upper(), logging.WARNING))
+    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT))
+    logging.getLogger().addHandler(file_handler)
 
 
 def _parse_since(since: Optional[str]) -> Optional[datetime]:
@@ -86,12 +119,22 @@ def _parse_since(since: Optional[str]) -> Optional[datetime]:
 @click.option(
     "--log-level", default="INFO", show_default=True,
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    help="Logging verbosity.",
+    help="Console logging verbosity.",
+)
+@click.option(
+    "--error-log", default="data/logs/errors.log", show_default=True,
+    help="Path to a rotating log file capturing WARNING+/ERROR+ records for later analysis. "
+         "Set to an empty string to disable file logging entirely.",
+)
+@click.option(
+    "--error-log-level", default="WARNING", show_default=True,
+    type=click.Choice(["WARNING", "ERROR"], case_sensitive=False),
+    help="Minimum severity written to --error-log.",
 )
 @click.pass_context
-def cli(ctx: click.Context, config: str, db: str, log_level: str) -> None:
+def cli(ctx: click.Context, config: str, db: str, log_level: str, error_log: str, error_log_level: str) -> None:
     """AssetMonitor — continuous security asset monitoring tool."""
-    _setup_logging(log_level)
+    _setup_logging(log_level, error_log_path=error_log or None, error_log_level=error_log_level)
     ctx.ensure_object(dict)
 
     try:

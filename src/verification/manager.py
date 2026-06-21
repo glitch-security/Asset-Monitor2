@@ -284,6 +284,59 @@ class VerificationManager:
 
         return result
 
+    async def _persist(self, result: dict) -> None:
+        """Upsert the verification result into the database."""
+        fqdn = result["fqdn"]
+        domain_id = result["domain_id"]
+
+        # Determine status string
+        if result.get("live"):
+            status = "alive"
+        elif result.get("dns_resolved"):
+            status = "dead"
+        else:
+            status = "unknown"
+
+        # Compute a simple body hash if body data was included
+        body_hash: Optional[str] = result.get("body_hash")
+
+        takeover_vulnerable = bool(result.get("takeover"))
+
+        try:
+            self._db.upsert_subdomain(
+                fqdn=fqdn,
+                domain_id=domain_id,
+                discovery_technique=result.get("discovery_technique"),
+                status=status,
+                ip_addresses=(
+                    result.get("a_records", []) + result.get("aaaa_records", [])
+                ) or None,
+                technologies=result.get("technologies") or None,
+                http_status=result.get("status_code") or None,
+                page_title=result.get("page_title") or None,
+                classification=result.get("classification"),
+                favicon_hash=result.get("favicon_hash"),
+                body_hash=body_hash,
+                cert_fingerprint=result.get("cert_fingerprint"),
+                takeover_vulnerable=takeover_vulnerable,
+            )
+
+            # Add a snapshot scan record with DNS security data
+            self._db.add_scan_record(
+                subdomain_id=self._db.get_subdomain(fqdn).id,
+                status=status,
+                http_status=result.get("status_code") or None,
+                response_size=result.get("response_size") or None,
+                body_hash=body_hash,
+                technologies=result.get("technologies") or None,
+                raw_headers=result.get("response_headers") or None,
+                dnssec_info=result.get("dnssec_info"),
+                email_security=result.get("email_security"),
+                nameserver_security=result.get("nameserver_security"),
+            )
+        except Exception as exc:
+            logger.error("Database upsert failed for %s: %s", fqdn, exc)
+
     async def verify_batch(
         self,
         fqdns: set[str],
@@ -429,24 +482,28 @@ class VerificationManager:
                 {"added": sorted(added_ips), "removed": sorted(removed_ips)},
             ))
 
-        # Technology stack changes
-        old_techs = set(old_data.get("technologies", []) or [])
-        new_techs = set(new_data.get("technologies", []) or [])
-        added_techs = new_techs - old_techs
-        removed_techs = old_techs - new_techs
-        if added_techs:
+        # Technology stack changes — technologies are list[dict] ({name, version}),
+        # not hashable, so diff via name/version maps rather than set() arithmetic.
+        from ..detection.tech_stack import diff_technologies
+        tech_diff = diff_technologies(
+            old_data.get("technologies", []) or [],
+            new_data.get("technologies", []) or [],
+        )
+        if tech_diff["added"]:
+            added_names = sorted(t["name"] for t in tech_diff["added"])
             events.append(_event(
                 "TECH_ADDED",
                 "LOW",
-                f"New technologies detected on {fqdn}: {sorted(added_techs)}",
-                {"technologies": sorted(added_techs)},
+                f"New technologies detected on {fqdn}: {added_names}",
+                {"technologies": tech_diff["added"]},
             ))
-        if removed_techs:
+        if tech_diff["removed"]:
+            removed_names = sorted(t["name"] for t in tech_diff["removed"])
             events.append(_event(
                 "TECH_REMOVED",
                 "INFO",
-                f"Technologies no longer detected on {fqdn}: {sorted(removed_techs)}",
-                {"technologies": sorted(removed_techs)},
+                f"Technologies no longer detected on {fqdn}: {removed_names}",
+                {"technologies": tech_diff["removed"]},
             ))
 
         # TLS certificate fingerprint change
@@ -627,60 +684,3 @@ def _check_nameserver_security_changes(
                 f"Nameserver DNSSEC validation now failing for {fqdn}",
                 {"dnssec_validated": False},
             ))
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    async def _persist(self, result: dict) -> None:
-        """Upsert the verification result into the database."""
-        fqdn = result["fqdn"]
-        domain_id = result["domain_id"]
-
-        # Determine status string
-        if result.get("live"):
-            status = "alive"
-        elif result.get("dns_resolved"):
-            status = "dead"
-        else:
-            status = "unknown"
-
-        # Compute a simple body hash if body data was included
-        body_hash: Optional[str] = result.get("body_hash")
-
-        takeover_vulnerable = bool(result.get("takeover"))
-
-        try:
-            self._db.upsert_subdomain(
-                fqdn=fqdn,
-                domain_id=domain_id,
-                discovery_technique=result.get("discovery_technique"),
-                status=status,
-                ip_addresses=(
-                    result.get("a_records", []) + result.get("aaaa_records", [])
-                ) or None,
-                technologies=result.get("technologies") or None,
-                http_status=result.get("status_code") or None,
-                page_title=result.get("page_title") or None,
-                classification=result.get("classification"),
-                favicon_hash=result.get("favicon_hash"),
-                body_hash=body_hash,
-                cert_fingerprint=result.get("cert_fingerprint"),
-                takeover_vulnerable=takeover_vulnerable,
-            )
-
-            # Add a snapshot scan record with DNS security data
-            self._db.add_scan_record(
-                subdomain_id=self._db.get_subdomain(fqdn).id,
-                status=status,
-                http_status=result.get("status_code") or None,
-                response_size=result.get("response_size") or None,
-                body_hash=body_hash,
-                technologies=result.get("technologies") or None,
-                raw_headers=result.get("response_headers") or None,
-                dnssec_info=result.get("dnssec_info"),
-                email_security=result.get("email_security"),
-                nameserver_security=result.get("nameserver_security"),
-            )
-        except Exception as exc:
-            logger.error("Database upsert failed for %s: %s", fqdn, exc)

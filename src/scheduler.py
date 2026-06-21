@@ -307,7 +307,7 @@ class SchedManager:
         if techniques.dns_records:
             try:
                 from src.enumeration.dns_records import enumerate_dns_records
-                dr_fqdns = await enumerate_dns_records(dom.domain)
+                dr_fqdns = await enumerate_dns_records(dom.domain, resolvers=cfg.enumeration.dns_resolvers)
                 discovered_fqdns.update(dr_fqdns)
                 logger.debug("DNS records found %d FQDNs for %s", len(dr_fqdns), dom.domain)
             except ImportError:

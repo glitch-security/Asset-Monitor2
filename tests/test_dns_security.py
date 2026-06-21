@@ -260,6 +260,81 @@ class TestDNSSecurityAPI(unittest.TestCase):
         asyncio.run(_test())
 
 
+class TestSubdomainScanColumnMigration(unittest.TestCase):
+    """Regression test: databases created before the DNS-security columns
+    (dns_records, dnssec_info, email_security, nameserver_security) existed
+    on subdomain_scans had no migration adding them, so every verify_batch()
+    call against such a DB raised 'no such column: subdomain_scans.dns_records'
+    and silently aborted — meaning NO subdomains were ever persisted for that
+    domain again, even though enumeration kept finding them."""
+
+    def test_migration_adds_missing_columns_to_old_db(self):
+        import sqlite3
+        from src.database import DatabaseManager
+
+        db_path = os.path.join(tempfile.gettempdir(), 'test_old_schema_migration.db')
+        for ext in ('', '-shm', '-wal'):
+            p = db_path + ext
+            if os.path.exists(p):
+                os.remove(p)
+
+        # Build a minimal pre-Sprint-1 schema: subdomain_scans WITHOUT the
+        # four DNS-security columns, simulating a database created before
+        # they were added to the SubdomainScan model.
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE subdomains (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                fqdn TEXT NOT NULL UNIQUE,
+                domain_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'unknown'
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE subdomain_scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                subdomain_id INTEGER NOT NULL,
+                scanned_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'unknown',
+                http_status INTEGER,
+                response_size INTEGER,
+                body_hash TEXT,
+                technologies TEXT,
+                raw_headers TEXT
+            )
+        """)
+        conn.commit()
+        conn.close()
+
+        db = None
+        try:
+            # Opening the DB must run the migration and add the missing columns
+            # rather than crash or silently skip them.
+            db = DatabaseManager(db_path)
+
+            conn2 = sqlite3.connect(db_path)
+            cols = {row[1] for row in conn2.execute("PRAGMA table_info(subdomain_scans)")}
+            conn2.close()
+            for expected in ("dns_records", "dnssec_info", "email_security", "nameserver_security"):
+                self.assertIn(expected, cols)
+
+            # The exact query shape that previously raised OperationalError.
+            from sqlalchemy import select
+            from src.database import SubdomainScan
+            with db.get_session() as session:
+                list(session.scalars(select(SubdomainScan)).all())
+        finally:
+            if db is not None:
+                db._engine.dispose()
+            for ext in ('', '-shm', '-wal'):
+                p = db_path + ext
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+
+
 class TestDNSSecurityChangeEvents(unittest.TestCase):
     """Test DNS security change event generation."""
 
@@ -383,6 +458,125 @@ class TestDNSSecurityChangeEvents(unittest.TestCase):
             self.assertEqual(len(dns_events), 0)
 
         asyncio.run(_test())
+
+    def test_tech_diff_with_dict_shaped_technologies(self):
+        """Regression: technologies are stored as list[dict] ({name, version}), which are
+        unhashable — generate_change_events must not raise TypeError('unhashable type: dict')
+        when diffing them (previously used a raw set() diff that crashed in production)."""
+        import asyncio
+        from src.verification.manager import VerificationManager
+        from src.config import AppConfig
+
+        cfg = AppConfig()
+        vm = VerificationManager(cfg, None)
+
+        async def _test():
+            old_data = {'live': True, 'technologies': [{'name': 'nginx', 'version': '1.18'}]}
+            new_data = {
+                'live': True,
+                'technologies': [
+                    {'name': 'nginx', 'version': '1.18'},
+                    {'name': 'WordPress', 'version': '6.4'},
+                ],
+            }
+
+            events = await vm.generate_change_events('test.com', old_data, new_data)
+            added = [e for e in events if e['event_type'] == 'TECH_ADDED']
+            self.assertEqual(len(added), 1)
+            self.assertEqual(added[0]['diff_data']['technologies'], [{'name': 'WordPress', 'version': '6.4'}])
+
+        asyncio.run(_test())
+
+    def test_tech_diff_with_legacy_string_technologies(self):
+        """diff_technologies also accepts the legacy list[str] format without crashing."""
+        import asyncio
+        from src.verification.manager import VerificationManager
+        from src.config import AppConfig
+
+        cfg = AppConfig()
+        vm = VerificationManager(cfg, None)
+
+        async def _test():
+            old_data = {'live': True, 'technologies': ['nginx']}
+            new_data = {'live': True, 'technologies': []}
+
+            events = await vm.generate_change_events('test.com', old_data, new_data)
+            removed = [e for e in events if e['event_type'] == 'TECH_REMOVED']
+            self.assertEqual(len(removed), 1)
+
+        asyncio.run(_test())
+
+
+class TestVerificationPersist(unittest.TestCase):
+    """Regression test for the _persist method being misplaced outside the
+    VerificationManager class (it ended up nested inside a module-level helper
+    function, so self._persist(result) raised AttributeError on every single
+    verification — silently preventing ALL subdomains from ever being saved)."""
+
+    def test_persist_is_a_bound_method(self):
+        from src.verification.manager import VerificationManager
+
+        self.assertTrue(hasattr(VerificationManager, '_persist'))
+        self.assertTrue(callable(getattr(VerificationManager, '_persist')))
+
+    def test_persist_writes_to_database(self):
+        """_persist must actually be callable as self._persist(...) and upsert the subdomain."""
+        import asyncio
+        import os
+        import tempfile
+        from src.config import AppConfig
+        from src.database import DatabaseManager
+        from src.verification.manager import VerificationManager
+
+        db_path = os.path.join(tempfile.gettempdir(), 'test_persist_regression.db')
+        for ext in ('', '-shm', '-wal'):
+            p = db_path + ext
+            if os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+
+        db = DatabaseManager(db_path)
+        try:
+            domain = db.add_domain('persist-test.example.com')
+            cfg = AppConfig()
+            vm = VerificationManager(cfg, db)
+
+            async def _test():
+                result = {
+                    "fqdn": "sub.persist-test.example.com",
+                    "domain_id": domain.id,
+                    "live": True,
+                    "dns_resolved": True,
+                    "discovery_technique": "manual",
+                    "a_records": ["1.2.3.4"],
+                    "aaaa_records": [],
+                    "technologies": [{"name": "nginx", "version": "1.18"}],
+                    "status_code": 200,
+                    "page_title": "Test",
+                    "classification": None,
+                    "favicon_hash": None,
+                    "body_hash": "abc123",
+                    "cert_fingerprint": None,
+                    "takeover": None,
+                }
+                await vm._persist(result)
+
+            asyncio.run(_test())
+
+            sub = db.get_subdomain("sub.persist-test.example.com")
+            self.assertIsNotNone(sub)
+            self.assertEqual(sub.status, "alive")
+        finally:
+            db._engine.dispose()
+            for ext in ('', '-shm', '-wal'):
+                p = db_path + ext
+                if os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except Exception:
+                        pass
 
 
 class TestDNSSecurityDashboard(unittest.TestCase):

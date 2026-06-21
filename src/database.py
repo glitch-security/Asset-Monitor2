@@ -796,6 +796,23 @@ class DatabaseManager:
                     )
                 )
 
+            # Add Sprint 1 (DNS security) columns to subdomain_scans if missing.
+            # DBs created before DNS security was added never got these columns,
+            # which made every verify_batch() call for that domain raise
+            # "no such column: subdomain_scans.dns_records" and abort — silently
+            # preventing ALL subdomains from being verified/persisted.
+            rows = conn.execute(
+                __import__("sqlalchemy").text("PRAGMA table_info(subdomain_scans)")
+            ).fetchall()
+            existing_cols = {r[1] for r in rows}
+            for col in ("dns_records", "dnssec_info", "email_security", "nameserver_security"):
+                if col not in existing_cols:
+                    conn.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE subdomain_scans ADD COLUMN {col} TEXT"
+                        )
+                    )
+
             conn.commit()
 
     # ------------------------------------------------------------------

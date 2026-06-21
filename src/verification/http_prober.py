@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import ssl
 from typing import Optional
 
 import httpx
@@ -133,7 +134,11 @@ async def _single_probe(
                 "ssl_valid": verify,
             }
 
-    except httpx.SSLError:
+    except ssl.SSLError:
+        # httpx has no SSLError of its own (removed in modern versions) — the
+        # underlying ssl module's exception is what actually gets raised for
+        # certificate/handshake failures that aren't already wrapped as
+        # httpx.ConnectError below.
         return None  # caller retries without verify
     except httpx.TimeoutException:
         logger.debug("Timeout probing %s", url)
