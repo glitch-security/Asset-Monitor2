@@ -2409,12 +2409,14 @@ async function submitAddTarget() {
     screenshot:     document.getElementById('wt-screenshot').checked,
   } : null;
   const profileId = parseInt(document.getElementById('at-profile-id').value) || null;
+  // Pass company_id if adding from within a project detail view
+  const companyId = _pdProjectId || null;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Adding...';
   try {
     const r = await _mfetch('/api/targets', {
       method: 'POST',
-      body: JSON.stringify({type, value, scan_now: scanNow, techniques, website_techniques}),
+      body: JSON.stringify({type, value, scan_now: scanNow, techniques, website_techniques, company_id: companyId}),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || r.statusText);

@@ -551,6 +551,7 @@ def build_app(
         value = (data.get("value") or "").strip()
         scan_now = bool(data.get("scan_now", False))
         techniques = data.get("techniques") or {}
+        company_id = data.get("company_id")  # Optional: associate with a project
 
         if not value:
             raise HTTPException(status_code=400, detail="value is required")
@@ -562,7 +563,7 @@ def build_app(
 
         try:
             if target_type == "domain":
-                dom = db.add_domain(value)
+                dom = db.add_domain(value, company_id=company_id)
                 result: dict = {"type": "domain", "id": dom.id, "value": dom.domain}
                 if scan_now and sched_manager:
                     asyncio.create_task(_run_domain_scan(sched_manager, dom.domain, techniques))
@@ -571,7 +572,7 @@ def build_app(
             elif target_type == "subdomain":
                 parts = value.split(".")
                 root = ".".join(parts[-2:]) if len(parts) >= 2 else value
-                parent = db.get_domain(root) or db.add_domain(root)
+                parent = db.get_domain(root) or db.add_domain(root, company_id=company_id)
                 sub, is_new = db.upsert_subdomain(
                     fqdn=value, domain_id=parent.id, discovery_technique="manual",
                 )

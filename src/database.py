@@ -1041,14 +1041,15 @@ class DatabaseManager:
     # Domain operations
     # ------------------------------------------------------------------
 
-    def add_domain(self, domain: str) -> Domain:
+    def add_domain(self, domain: str, company_id: Optional[int] = None) -> Domain:
         """Add a new root domain to the database.
 
         If the domain already exists the existing record is returned without
-        modification.
+        modification (and company_id is NOT updated).
 
         Args:
             domain: The root domain name, e.g. ``"example.com"``.
+            company_id: Optional company (project) ID to associate with this domain.
 
         Returns:
             The :class:`Domain` ORM object (persisted).
@@ -1057,7 +1058,7 @@ class DatabaseManager:
             existing = session.scalar(select(Domain).where(Domain.domain == domain))
             if existing is not None:
                 return existing
-            obj = Domain(domain=domain)
+            obj = Domain(domain=domain, company_id=company_id)
             session.add(obj)
             session.flush()
             # Refresh to populate auto-generated fields before the session closes.
