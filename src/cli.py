@@ -524,35 +524,51 @@ def daemon(ctx: click.Context) -> None:
             )
 
     # Build uvicorn SSL configuration
-    ssl_config = None
+    # Note: uvicorn.run() accepts ssl_keyfile, ssl_certfile, ssl_ca_certs, and ssl_cert_reqs natively
+    # We use these instead of building a manual SSLContext to ensure client cert verification works
+    ssl_kwargs = {}
     if config.web.ssl_enabled:
         if not config.web.ssl_cert_path or not config.web.ssl_key_path:
             console.print("[bold red]SSL enabled but cert_path or key_path not set![/bold red]")
             console.print("Set web.ssl_cert_path and web.ssl_key_path in config.yaml")
             sys.exit(1)
 
+        import os
         import ssl
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(
-            certfile=config.web.ssl_cert_path,
-            keyfile=config.web.ssl_key_path,
-            password=None,
-        )
 
-        # Load CA for client verification if configured
+        # Validate cert and key files exist before passing to uvicorn
+        if not os.path.isfile(config.web.ssl_cert_path):
+            console.print(f"[bold red]SSL certificate file not found: {config.web.ssl_cert_path}[/bold red]")
+            sys.exit(1)
+        if not os.path.isfile(config.web.ssl_key_path):
+            console.print(f"[bold red]SSL key file not found: {config.web.ssl_key_path}[/bold red]")
+            sys.exit(1)
+
+        ssl_kwargs["ssl_keyfile"] = config.web.ssl_key_path
+        ssl_kwargs["ssl_certfile"] = config.web.ssl_cert_path
+
+        # Load CA for client verification if configured (mTLS)
+        # This uses uvicorn's native SSL support instead of a manual SSLContext
         if config.web.ssl_verify_clients and config.web.ssl_ca_path:
-            context.verify_mode = ssl.CERT_REQUIRED
-            context.load_verify_locations(cafile=config.web.ssl_ca_path)
-            console.print("[dim]  Client certificate verification enabled[/dim]")
+            if not os.path.isfile(config.web.ssl_ca_path):
+                console.print(f"[bold red]SSL CA file not found: {config.web.ssl_ca_path}[/bold red]")
+                sys.exit(1)
+            ssl_kwargs["ssl_ca_certs"] = config.web.ssl_ca_path
+            ssl_kwargs["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+            console.print("[dim]  Client certificate verification enabled (mTLS)[/dim]")
 
-        ssl_config = context
-
+    # Security note: proxy_headers and forwarded_allow_ips
+    # If deploying behind a reverse proxy/load balancer, set:
+    #   proxy_headers=True to trust X-Forwarded-* headers
+    #   forwarded_allow_ips=<proxy_ip> to only accept headers from the proxy
+    # Current defaults (proxy_headers not set) are safe for direct deployment.
     uvicorn.run(
         app,
         host=config.web.host if config.web.enabled else "127.0.0.1",
         port=config.web.port if config.web.enabled else 5000,
         log_level="warning",
         access_log=False,
-        ssl_keyfile=config.web.ssl_key_path if config.web.ssl_enabled else None,
-        ssl_certfile=config.web.ssl_cert_path if config.web.ssl_enabled else None,
+        # proxy_headers=True,  # Enable ONLY behind trusted reverse proxy
+        # forwarded_allow_ips="127.0.0.1",  # Restrict to proxy IP when enabled
+        **ssl_kwargs,
     )

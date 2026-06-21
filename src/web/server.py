@@ -185,7 +185,7 @@ def build_app(
         if request.session.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Forbidden — admin role required")
 
-    # ── Session middleware ──────────────────────────────────────────────────
+    # ── Session middleware ───────────────────────────────────────────────────
     # Added AFTER the @app.middleware("http") decorator so Starlette makes it
     # the OUTER layer — it runs first and populates request.session before
     # _gate is reached.
@@ -194,7 +194,7 @@ def build_app(
         SessionMiddleware,
         secret_key=secret_key,
         max_age=30 * 24 * 3600,
-        https_only=False,
+        https_only=config.web.ssl_enabled,  # Secure flag when SSL is enabled
         same_site="lax",
     )
 
@@ -1002,8 +1002,8 @@ def build_app(
     # API — Projects (Companies) management
     # ────────────────────────────────────────────────────────────────────────
 
-    @app.get("/api/projects")
-    async def api_list_projects(user: str = Depends(_require_admin)) -> JSONResponse:
+    @app.get("/api/projects", dependencies=[Depends(_require_admin)])
+    async def api_list_projects() -> JSONResponse:
         """List all projects/companies with summary stats."""
         try:
             companies = db.get_all_companies()
@@ -1555,8 +1555,8 @@ def build_app(
     # API — GitHub Configuration
     # ────────────────────────────────────────────────────────────────────────
 
-    @app.get("/api/config/github")
-    async def api_get_github_config(user: str = Depends(_require_admin)) -> JSONResponse:
+    @app.get("/api/config/github", dependencies=[Depends(_require_admin)])
+    async def api_get_github_config() -> JSONResponse:
         """Get current GitHub configuration (without exposing the full token)."""
         if not hasattr(config, 'github'):
             return JSONResponse({"enabled": False, "token_configured": False})
@@ -1574,8 +1574,8 @@ def build_app(
             "auto_discover_organizations": config.github.auto_discover_organizations,
         })
 
-    @app.put("/api/config/github")
-    async def api_update_github_config(payload: dict, user: str = Depends(_require_admin)) -> JSONResponse:
+    @app.put("/api/config/github", dependencies=[Depends(_require_admin)])
+    async def api_update_github_config(payload: dict) -> JSONResponse:
         """Update GitHub configuration."""
         try:
             # Store token in database if provided

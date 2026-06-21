@@ -68,7 +68,9 @@ services:
       # - ./wordlists:/app/wordlists:ro
 
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"]
+      # Healthcheck supports both HTTP and HTTPS deployments
+      # Set ASSETMONITOR_HEALTHCHECK_PROTO=https to use HTTPS, defaults to http
+      test: ["CMD", "sh", "-c", "python -c \"import urllib.request, ssl, os; proto=os.getenv('ASSETMONITOR_HEALTHCHECK_PROTO', 'http'); ctx=ssl._create_unverified_context() if proto=='https' else None; urllib.request.urlopen(f'{proto}://localhost:5000/health', timeout=5, context=ctx).read()\""]
       interval: 60s
       timeout: 15s
       retries: 3
