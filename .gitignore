@@ -157,6 +157,10 @@ BUG_BOUNTY_*.md
 *_INSTRUCTIONS.md
 *_SUMMARY.md
 
+# ----- All .md files except README -----
+*.md
+!README.md
+
 # ----- Standalone test scripts (keep tests/ only) -----
 migrate_db.py
 test_api_fixes.py
