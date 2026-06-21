@@ -160,3 +160,15 @@ BUG_BOUNTY_*.md
 # ----- Standalone test scripts (keep tests/ only) -----
 migrate_db.py
 test_api_fixes.py
+
+# ----- UI Testing artifacts -----
+TEST_REPORT.md
+UI_TEST_PLAN.md
+verify_login.py
+*_verification*.py
+*_screenshot*.png
+login_verification_screenshot.png
+
+# ----- Session state & working files -----
+/tmp/
+*.cookies.txt
