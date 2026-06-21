@@ -1307,6 +1307,16 @@ const TECHNIQUES = [
 ];
 
 // ── Utilities ────────────────────────────────────────────────────────────────
+// XSS prevention: escape HTML entities in user-supplied strings
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
