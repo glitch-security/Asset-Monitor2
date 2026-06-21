@@ -377,68 +377,26 @@
   <!-- Critical alert banner -->
   <div id="critical-banner" class="d-none mb-3"></div>
 
-  <!-- Tabs -->
-  <ul class="nav tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
-    <li class="nav-item"><a class="nav-link active" data-tab="targets" href="#" onclick="showTab('targets',this);return false;"><i class="bi bi-crosshair"></i> Targets <span class="badge bg-secondary ms-1" id="tab-badge-targets">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="projects" href="#" onclick="showTab('projects',this);return false;"><i class="bi bi-building"></i> Projects <span class="badge bg-secondary ms-1" id="tab-badge-projects">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="profiles" href="#" onclick="showTab('profiles',this);return false;"><i class="bi bi-sliders2"></i> Profiles <span class="badge bg-secondary ms-1" id="tab-badge-profiles">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="ports" href="#" onclick="showTab('ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="tab-badge-ports">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="subdomains" href="#" onclick="showTab('subdomains',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="tab-badge-subs">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="headers" href="#" onclick="showTab('headers',this);return false;"><i class="bi bi-shield-check"></i> HTTP Headers <span class="badge bg-secondary ms-1" id="tab-badge-headers">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="changes" href="#" onclick="showTab('changes',this);return false;"><i class="bi bi-activity"></i> Change Events <span class="badge bg-secondary ms-1" id="tab-badge-changes">0</span></a></li>
-    <li class="nav-item"><a class="nav-link" data-tab="github" href="#" onclick="showTab('github',this);return false;"><i class="bi bi-github"></i> GitHub <span class="badge bg-secondary ms-1" id="tab-badge-github">0</span></a></li>
-  </ul>
-
-  <!-- Tab: Targets -->
-  <div id="tab-targets">
-    <div class="card">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-crosshair"></i> Monitored Targets</span>
-        <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="triggerFullScan()">
-            <i class="bi bi-play-circle"></i> Scan All Now
-          </button>
-          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" data-bs-toggle="modal" data-bs-target="#addTargetModal">
-            <i class="bi bi-plus-lg"></i> Add Target
-          </button>
-        </div>
-      </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-hover mb-0">
-            <thead><tr>
-              <th>Domain</th>
-              <th>Profile</th>
-              <th>Subdomains</th>
-              <th>Live</th>
-              <th>Last Scan</th>
-              <th>Added</th>
-              <th>Actions</th>
-            </tr></thead>
-            <tbody id="targets-body">
-              <tr><td colspan="7" class="text-center text-muted py-4"><i class="bi bi-hourglass-split"></i> Loading...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+  <!-- Projects Header -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="h4 mb-1" style="font-weight:500;">Projects</h2>
+      <p style="font-size:.8rem;color:var(--text3);margin:0;">Click on a company name to view targets, subdomains, and more</p>
     </div>
+    <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+      <i class="bi bi-plus-lg"></i> New Project
+    </button>
   </div>
 
-  <!-- Tab: Projects -->
-  <div id="tab-projects" class="d-none">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <span style="font-size:.8rem;color:var(--text3);">Organize your targets by company/project. Add mobile apps and API assets to each project.</span>
-      <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
-        <i class="bi bi-plus-lg"></i> New Project
-      </button>
-    </div>
+  <!-- Projects Table (Main Content) -->
+  <div id="projects-container">
     <div class="card">
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover mb-0">
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Company / Project</th>
                 <th>Type</th>
                 <th>Domains</th>
                 <th>Mobile Apps</th>
@@ -456,7 +414,7 @@
     </div>
   </div>
 
-  <!-- Tab: Profiles -->
+  <!-- Tab: Profiles (Hidden - used in project detail) -->
   <div id="tab-profiles" class="d-none">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <span style="font-size:.8rem;color:var(--text3);">Scan profiles control enumeration techniques, port scan behaviour, and crawl depth. Assign a profile to any domain.</span>
@@ -676,6 +634,186 @@
   </div>
 
 </div><!-- /main-dashboard -->
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- PROJECT DETAIL PANEL                                                    -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="project-detail" style="display:none;">
+  <div class="detail-navbar d-flex align-items-center gap-3">
+    <button class="btn btn-sm btn-outline-secondary" onclick="closeProjectDetail()">
+      <i class="bi bi-arrow-left"></i> Back
+    </button>
+    <div class="flex-grow-1">
+      <span id="pd-project-name" style="font-size:.95rem;font-weight:600;color:var(--text1);"></span>
+      <span id="pd-project-type" class="ms-2"></span>
+    </div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="editProject(_pdProjectId)">
+        <i class="bi bi-pencil"></i> Edit
+      </button>
+      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+        <i class="bi bi-plus-lg"></i> Add Target
+      </button>
+    </div>
+  </div>
+
+  <div class="container-fluid py-3" style="max-width:1600px;">
+    <!-- Detail stat cards -->
+    <div class="row g-2 mb-3">
+      <div class="col"><div class="stat-card"><div class="stat-num" id="pd-s-domains">–</div><div class="stat-label">Domains</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num" id="pd-s-subs">–</div><div class="stat-label">Subdomains</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num text-success" id="pd-s-live">–</div><div class="stat-label">Live Hosts</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num text-info" id="pd-s-ports">–</div><div class="stat-label">Open Ports</div></div></div>
+      <div class="col"><div class="stat-card"><div class="stat-num" id="pd-s-events">–</div><div class="stat-label">Events (7d)</div></div></div>
+    </div>
+
+    <!-- Detail sub-tabs -->
+    <ul class="nav sub-tab-custom border-bottom mb-3" style="border-color:var(--border) !important;">
+      <li class="nav-item"><a class="nav-link active" data-ptab="pd-targets" href="#" onclick="showProjectTab('pd-targets',this);return false;"><i class="bi bi-crosshair"></i> Targets <span class="badge bg-secondary ms-1" id="pd-tab-badge-targets">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-subs" href="#" onclick="showProjectTab('pd-subs',this);return false;"><i class="bi bi-globe"></i> Subdomains <span class="badge bg-secondary ms-1" id="pd-tab-badge-subs">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-ports" href="#" onclick="showProjectTab('pd-ports',this);return false;"><i class="bi bi-ethernet"></i> Port Scans <span class="badge bg-secondary ms-1" id="pd-tab-badge-ports">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-changes" href="#" onclick="showProjectTab('pd-changes',this);return false;"><i class="bi bi-activity"></i> Changes (7d) <span class="badge bg-secondary ms-1" id="pd-tab-badge-changes">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-headers" href="#" onclick="showProjectTab('pd-headers',this);return false;"><i class="bi bi-shield-check"></i> HTTP Headers <span class="badge bg-secondary ms-1" id="pd-tab-badge-headers">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-mobile" href="#" onclick="showProjectTab('pd-mobile',this);return false;"><i class="bi bi-phone"></i> Mobile Apps <span class="badge bg-secondary ms-1" id="pd-tab-badge-mobile">0</span></a></li>
+      <li class="nav-item"><a class="nav-link" data-ptab="pd-api" href="#" onclick="showProjectTab('pd-api',this);return false;"><i class="bi bi-plug"></i> API Assets <span class="badge bg-secondary ms-1" id="pd-tab-badge-api">0</span></a></li>
+    </ul>
+
+    <!-- Detail: Targets -->
+    <div id="pd-tab-pd-targets">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-crosshair"></i> Targets</span>
+          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+            <i class="bi bi-plus-lg"></i> Add Target
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr>
+                <th>Domain</th><th>Profile</th><th>Subdomains</th><th>Live</th><th>Last Scan</th><th>Actions</th>
+              </tr></thead>
+              <tbody id="pd-targets-body"><tr><td colspan="6" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Subdomains -->
+    <div id="pd-tab-pd-subs" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-globe"></i> Subdomains</span>
+          <div class="d-flex gap-2">
+            <select class="form-select form-select-sm" style="width:120px;font-size:.75rem;" id="pd-filter-sub-status" onchange="renderProjectSubs()">
+              <option value="">All status</option><option value="alive">Alive</option><option value="dead">Dead</option>
+            </select>
+            <input type="text" class="form-control form-control-sm" style="width:200px;font-size:.75rem;" placeholder="Filter FQDN..." id="pd-filter-sub-text" oninput="renderProjectSubs()">
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>FQDN</th><th>Status</th><th>HTTP</th><th>IP</th><th>Open Ports</th><th>Technologies</th><th>Last Seen</th><th>Actions</th></tr></thead>
+              <tbody id="pd-subs-body"><tr><td colspan="8" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Port Scans -->
+    <div id="pd-tab-pd-ports" class="d-none">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-ethernet"></i> Port Scans — Latest per Host</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>Host</th><th>Status</th><th>Open Ports</th><th>Scan Duration</th><th>Scanned At</th></tr></thead>
+              <tbody id="pd-ports-body"><tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: HTTP Headers -->
+    <div id="pd-tab-pd-headers" class="d-none">
+      <div class="card">
+        <div class="card-header"><i class="bi bi-shield-check"></i> HTTP Security Headers</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>FQDN</th><th>HTTP</th><th>HSTS</th><th>CSP</th><th>X-Frame</th><th>X-CTO</th><th>Ref-Policy</th><th>Perm-Policy</th><th>Server Info Leaked</th><th>Scanned At</th></tr></thead>
+              <tbody id="pd-headers-body"><tr><td colspan="10" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Recent Changes -->
+    <div id="pd-tab-pd-changes" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-activity"></i> Recent Changes (last 7 days)</span>
+          <select class="form-select form-select-sm" style="width:130px;font-size:.75rem;" id="pd-filter-sev" onchange="renderProjectChanges()">
+            <option value="">All severities</option><option value="CRITICAL">Critical</option><option value="HIGH">High</option><option value="MEDIUM">Medium</option><option value="LOW">Low</option>
+          </select>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive" style="max-height:500px;overflow-y:auto;">
+            <table class="table table-hover mb-0">
+              <thead style="position:sticky;top:0;z-index:1;"><tr><th>Severity</th><th>Type</th><th>Target</th><th>Description</th><th>Detected</th></tr></thead>
+              <tbody id="pd-changes-body"><tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: Mobile Apps -->
+    <div id="pd-tab-pd-mobile" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-phone"></i> Mobile Apps</span>
+          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showAddMobileAppModal()">
+            <i class="bi bi-plus-lg"></i> Add Mobile App
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>Name</th><th>Platform</th><th>Package Name</th><th>Store URL</th><th>Status</th><th>Last Scan</th><th>Actions</th></tr></thead>
+              <tbody id="pd-mobile-body"><tr><td colspan="7" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail: API Assets -->
+    <div id="pd-tab-pd-api" class="d-none">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-plug"></i> API Assets</span>
+          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showAddApiAssetModal()">
+            <i class="bi bi-plus-lg"></i> Add API Asset
+          </button>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead><tr><th>Name</th><th>Type</th><th>Base URL</th><th>Auth</th><th>Public</th><th>Status</th><th>Last Scan</th><th>Actions</th></tr></thead>
+              <tbody id="pd-api-body"><tr><td colspan="8" class="text-center text-muted py-4">Loading...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
@@ -1292,6 +1430,11 @@ let _ddDomainName = null;
 let _ddData       = null;
 let _editProfileId = null;  // null = create mode
 let _assignDomainId = null;
+
+// Project detail state
+let _pdProjectId  = null;
+let _pdProjectName = null;
+let _pdData       = null;
 
 // Technique definitions for profile modal
 const TECHNIQUES = [
@@ -2171,10 +2314,12 @@ function startCountdown() {
 
 async function refreshAll(manual) {
   if (manual) document.getElementById('refresh-timer').textContent = '…';
-  await Promise.all([loadSummary(), loadTargets(), loadPorts(), loadSubdomains(), loadHeaders(), loadChanges(), loadProfiles(), loadGitHubRepos()]);
+  // Load only what's visible on main dashboard: summary and projects
+  await Promise.all([loadSummary(), loadProjects()]);
   startCountdown();
-  // Refresh domain detail if open
+  // Refresh detail panels if open
   if (_ddDomainId) openDomainDetail(_ddDomainId, _ddDomainName);
+  if (_pdProjectId) openProjectDetail(_pdProjectId, _pdProjectName);
 }
 
 // ── Add Target modal ─────────────────────────────────────────────────────────
@@ -2690,7 +2835,6 @@ async function loadProjects() {
     const projects = await r.json();
     const tbody = document.getElementById('projects-body');
     tbody.innerHTML = '';
-    document.getElementById('tab-badge-projects').textContent = projects.length;
 
     if (projects.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">
@@ -2710,7 +2854,9 @@ async function loadProjects() {
 
       row.innerHTML = `
         <td>
-          <div class="fw-bold">${escapeHtml(p.name)}</div>
+          <a href="#" onclick="openProjectDetail(${p.id},'${escapeHtml(p.name).replace(/'/g, "\\'")}');return false;" style="color:var(--accent);text-decoration:none;">
+            <div class="fw-bold">${escapeHtml(p.name)}</div>
+          </a>
           ${p.description ? `<small class="text-muted">${escapeHtml(p.description)}</small>` : ''}
         </td>
         <td>${programBadge}</td>
@@ -2720,13 +2866,10 @@ async function loadProjects() {
         <td>${statusBadge}</td>
         <td>
           <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-primary" onclick="editProject(${p.id})" title="Edit">
+            <button class="btn btn-outline-primary" onclick="event.stopPropagation();editProject(${p.id})" title="Edit">
               <i class="bi bi-pencil"></i>
             </button>
-            <button class="btn btn-outline-info" onclick="viewProjectDetails(${p.id})" title="Details">
-              <i class="bi bi-list-ul"></i>
-            </button>
-            <button class="btn btn-outline-danger" onclick="deleteProject(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}')" title="Delete">
+            <button class="btn btn-outline-danger" onclick="event.stopPropagation();deleteProject(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}')" title="Delete">
               <i class="bi bi-trash"></i>
             </button>
           </div>
@@ -2821,9 +2964,336 @@ async function deleteProject(id, name) {
   }
 }
 
+// ── Project Detail Panel ────────────────────────────────────────────────────────
+async function openProjectDetail(projectId, projectName) {
+  _pdProjectId  = projectId;
+  _pdProjectName = projectName;
+  document.getElementById('pd-project-name').textContent = projectName;
+  document.getElementById('pd-project-type').innerHTML = '';
+  // Reset to first sub-tab
+  showProjectTab('pd-targets', document.querySelector('.sub-tab-custom .nav-link'));
+  document.getElementById('project-detail').style.display = '';
+  document.getElementById('main-dashboard').style.display = 'none';
+
+  // Fetch project detail data
+  try {
+    const r = await fetch(`/api/projects/${projectId}`);
+    _pdData = await r.json();
+    if (r.ok) {
+      // Set program type badge
+      const programBadge = _pdData.program_type
+        ? `<span class="badge bg-info">${escapeHtml(_pdData.program_type)}</span>`
+        : '<span class="text-muted">Private</span>';
+      document.getElementById('pd-project-type').innerHTML = programBadge;
+
+      // Stats
+      document.getElementById('pd-s-domains').textContent = (_pdData.domains || []).length;
+      document.getElementById('pd-s-subs').textContent = _pdData.total_subdomains || 0;
+      document.getElementById('pd-s-live').textContent = _pdData.live_subdomains || 0;
+      document.getElementById('pd-s-ports').textContent = _pdData.open_ports || 0;
+      document.getElementById('pd-s-events').textContent = _pdData.recent_events || 0;
+
+      // Badges
+      document.getElementById('pd-tab-badge-targets').textContent = (_pdData.domains || []).length;
+      document.getElementById('pd-tab-badge-subs').textContent = _pdData.total_subdomains || 0;
+      document.getElementById('pd-tab-badge-ports').textContent = _pdData.open_ports || 0;
+      document.getElementById('pd-tab-badge-changes').textContent = _pdData.recent_events || 0;
+      document.getElementById('pd-tab-badge-mobile').textContent = (_pdData.mobile_apps || []).length;
+      document.getElementById('pd-tab-badge-api').textContent = (_pdData.api_assets || []).length;
+
+      renderProjectTargets();
+      renderProjectSubs();
+      renderProjectPorts();
+      renderProjectHeaders();
+      renderProjectChanges();
+      renderProjectMobileApps();
+      renderProjectApiAssets();
+    }
+  } catch(e) {
+    console.error('project-detail', e);
+    showToast('Failed to load project details', 'danger');
+  }
+}
+
+function closeProjectDetail() {
+  document.getElementById('project-detail').style.display = 'none';
+  document.getElementById('main-dashboard').style.display = '';
+  _pdProjectId  = null;
+  _pdProjectName = null;
+  _pdData       = null;
+}
+
+function showProjectTab(name, el) {
+  document.querySelectorAll('[id^="pd-tab-"]').forEach(t => t.classList.add('d-none'));
+  document.querySelectorAll('.sub-tab-custom .nav-link').forEach(a => a.classList.remove('active'));
+  const panel = document.getElementById('pd-tab-' + name);
+  if (panel) panel.classList.remove('d-none');
+  if (el) el.classList.add('active');
+}
+
+function renderProjectTargets() {
+  if (!_pdData) return;
+  const tbody = document.getElementById('pd-targets-body');
+  const domains = _pdData.domains || [];
+
+  if (!domains.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No targets yet. Click "Add Target" to get started.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = domains.map(d => {
+    const livePct = d.total_subs > 0 ? Math.round(d.live_subs / d.total_subs * 100) : 0;
+    const liveColor = livePct > 66 ? 'text-success' : livePct > 33 ? 'text-warning' : 'text-danger';
+    const lastScan = d.last_scan
+      ? `<span style="font-size:.75rem;">${fmtDate(d.last_scan)}</span>`
+      : '<span class="text-muted" style="font-size:.75rem;">Never</span>';
+    const profBadge = profileBadge(d.profile_mode, d.profile_name);
+
+    return `<tr>
+      <td>
+        <a href="#" onclick="openDomainDetail(${d.id},'${escapeHtml(d.domain)}');return false;" style="color:var(--accent);text-decoration:none;">
+          <code style="font-size:.85rem;">${escapeHtml(d.domain)}</code>
+        </a>
+      </td>
+      <td>${profBadge}</td>
+      <td><span class="domain-stat">${d.total_subs || 0}</span></td>
+      <td><span class="${liveColor} domain-stat">${d.live_subs || 0}</span></td>
+      <td>${lastScan}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="triggerDomainScan('${escapeHtml(d.domain)}')">
+          <i class="bi bi-play-fill"></i> Scan
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectSubs() {
+  if (!_pdData) return;
+  const statusFilter = document.getElementById('pd-filter-sub-status').value;
+  const textFilter = (document.getElementById('pd-filter-sub-text').value || '').toLowerCase();
+  const tbody = document.getElementById('pd-subs-body');
+  const now = Date.now();
+  let rows = _pdData.subdomains || [];
+
+  if (statusFilter) rows = rows.filter(s => s.status === statusFilter);
+  if (textFilter) rows = rows.filter(s => s.fqdn.toLowerCase().includes(textFilter));
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No subdomains.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(s => {
+    const isNew = s.first_seen && (now - new Date(s.first_seen)) < ONE_DAY_MS;
+    const newTag = isNew ? '<span class="new-badge">NEW</span>' : '';
+    const takeoverTag = s.takeover_vulnerable ? '<span class="takeover-badge"><i class="bi bi-exclamation-triangle-fill"></i> TAKEOVER</span>' : '';
+    const techs = (s.technologies || []).slice(0, 4).map(t => {
+      const name = typeof t === 'object' ? t.name : t;
+      return `<span class="badge bg-secondary me-1" style="font-size:.65rem;">${escapeHtml(name)}</span>`;
+    }).join('');
+    const ports = (s.open_ports || []).slice(0, 8).map(p => portBadge(p.port, p.service)).join('');
+    const httpCode = s.http_status ? `<span class="badge ${s.http_status < 300 ? 'bg-success' : s.http_status < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${s.http_status}</span>` : '—';
+    const ips = (s.ip_addresses || []).slice(0, 2).map(ip => `<code style="font-size:.72rem;color:var(--text3);">${escapeHtml(ip)}</code>`).join(' ');
+
+    return `<tr>
+      <td><code style="color:var(--accent);font-size:.8rem;">${escapeHtml(s.fqdn)}</code>${newTag}${takeoverTag}</td>
+      <td>${statusDot(s.status)}</td>
+      <td>${httpCode}</td>
+      <td>${ips || '—'}</td>
+      <td>${ports || '<span class="text-muted">—</span>'}</td>
+      <td>${techs || '<span class="text-muted">—</span>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${fmtDate(s.last_seen)}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary" style="font-size:.65rem;padding:1px 5px;" onclick="gotoSubdomain('${escapeHtml(s.fqdn)}')" title="View details">
+          <i class="bi bi-box-arrow-up-right"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectPorts() {
+  if (!_pdData) return;
+  const tbody = document.getElementById('pd-ports-body');
+  const portScans = _pdData.port_scans || [];
+
+  if (!portScans.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No port scan data yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = portScans.map(ps => {
+    const badges = (ps.ports || []).map(p => portBadge(p.port, p.service)).join('');
+    return `<tr>
+      <td><code style="color:var(--accent);">${escapeHtml(ps.host)}</code></td>
+      <td>${statusDot(ps.status)}</td>
+      <td>${badges || '<span class="text-muted">none open</span>'}</td>
+      <td class="text-muted">${ps.scan_duration ? ps.scan_duration.toFixed(1) + 's' : '—'}</td>
+      <td class="text-muted">${fmtDate(ps.scanned_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectHeaders() {
+  if (!_pdData) return;
+  const tbody = document.getElementById('pd-headers-body');
+  const headers = _pdData.headers || [];
+
+  if (!headers.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-3">No header data yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = headers.map(h => {
+    const sh = h.security_headers || {};
+    const leaked = Object.entries(h.info_leaked || {}).map(([k, v]) => `<span class="badge bg-warning text-dark me-1" style="font-size:.65rem;">${escapeHtml(k)}</span>`).join('');
+    const code = h.status_code;
+    const codeEl = code ? `<span class="badge ${code < 300 ? 'bg-success' : code < 400 ? 'bg-info' : 'bg-danger'}" style="font-size:.68rem;">${code}</span>` : '—';
+
+    return `<tr>
+      <td><code style="color:var(--accent);font-size:.8rem;">${escapeHtml(h.fqdn)}</code></td>
+      <td>${codeEl}</td>
+      <td>${secHeader(sh['strict-transport-security'])}</td>
+      <td>${secHeader(sh['content-security-policy'])}</td>
+      <td>${secHeader(sh['x-frame-options'])}</td>
+      <td>${secHeader(sh['x-content-type-options'])}</td>
+      <td>${secHeader(sh['referrer-policy'])}</td>
+      <td>${secHeader(sh['permissions-policy'])}</td>
+      <td>${leaked || '<span class="text-success" style="font-size:.75rem;"><i class="bi bi-check2"></i> None</span>'}</td>
+      <td class="text-muted" style="font-size:.75rem;">${fmtDate(h.scanned_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectChanges() {
+  if (!_pdData) return;
+  const sev = document.getElementById('pd-filter-sev').value;
+  const SEV_ORDER = {CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, INFO: 4};
+  let rows = _pdData.recent_changes || [];
+
+  if (sev) {
+    const minLevel = SEV_ORDER[sev] ?? 99;
+    rows = rows.filter(e => (SEV_ORDER[e.severity] ?? 99) <= minLevel);
+  }
+
+  const tbody = document.getElementById('pd-changes-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No recent changes.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(e => {
+    return `<tr>
+      <td>${sevBadge(e.severity)}</td>
+      <td><code style="font-size:.75rem;color:var(--text2);">${escapeHtml(e.event_type)}</code></td>
+      <td><code style="font-size:.75rem;color:var(--accent);">${escapeHtml(e.target)}</code></td>
+      <td style="max-width:380px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.description)}">${escapeHtml(e.description)}</td>
+      <td class="text-muted" style="white-space:nowrap;font-size:.75rem;">${fmtDate(e.detected_at)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectMobileApps() {
+  if (!_pdData) return;
+  const tbody = document.getElementById('pd-mobile-body');
+  const apps = _pdData.mobile_apps || [];
+
+  if (!apps.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">No mobile apps yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = apps.map(app => {
+    const platformBadge = app.platform === 'ios'
+      ? '<span class="badge bg-dark" style="font-size:.65rem;">iOS</span>'
+      : '<span class="badge bg-success" style="font-size:.65rem;">Android</span>';
+    const statusBadge = app.is_active
+      ? '<span class="badge bg-success" style="font-size:.65rem;">Active</span>'
+      : '<span class="badge bg-secondary" style="font-size:.65rem;">Inactive</span>';
+
+    return `<tr>
+      <td><strong style="font-size:.8rem;">${escapeHtml(app.name)}</strong></td>
+      <td>${platformBadge}</td>
+      <td><code style="font-size:.75rem;">${escapeHtml(app.package_name || '—')}</code></td>
+      <td>${app.app_store_url ? `<a href="${escapeHtml(app.app_store_url)}" target="_blank" style="font-size:.75rem;color:var(--accent);">View</a>` : '—'}</td>
+      <td>${statusBadge}</td>
+      <td class="text-muted" style="font-size:.75rem;">${app.last_scan ? fmtDate(app.last_scan) : 'Never'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="editMobileApp(${app.id})" title="Edit">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;" onclick="deleteMobileApp(${app.id})" title="Delete">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProjectApiAssets() {
+  if (!_pdData) return;
+  const tbody = document.getElementById('pd-api-body');
+  const assets = _pdData.api_assets || [];
+
+  if (!assets.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No API assets yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = assets.map(asset => {
+    const typeBadge = `<span class="badge bg-secondary" style="font-size:.65rem;">${escapeHtml(asset.api_type || 'rest').toUpperCase()}</span>`;
+    const statusBadge = asset.is_active
+      ? '<span class="badge bg-success" style="font-size:.65rem;">Active</span>'
+      : '<span class="badge bg-secondary" style="font-size:.65rem;">Inactive</span>';
+
+    return `<tr>
+      <td><strong style="font-size:.8rem;">${escapeHtml(asset.name)}</strong></td>
+      <td>${typeBadge}</td>
+      <td><code style="font-size:.75rem;">${escapeHtml(asset.base_url)}</code></td>
+      <td><span style="font-size:.75rem;">${escapeHtml(asset.authentication || 'None')}</span></td>
+      <td>${asset.is_public ? '<span class="badge bg-warning text-dark" style="font-size:.65rem;">Public</span>' : '<span class="badge bg-info" style="font-size:.65rem;">Private</span>'}</td>
+      <td>${statusBadge}</td>
+      <td class="text-muted" style="font-size:.75rem;">${asset.last_scan ? fmtDate(asset.last_scan) : 'Never'}</td>
+      <td>
+        <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="editApiAsset(${asset.id})" title="Edit">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;" onclick="deleteApiAsset(${asset.id})" title="Delete">
+          <i class="bi bi-trash3"></i>
+        </button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// Placeholder functions for mobile apps and API assets
+function showAddMobileAppModal() {
+  showToast('Mobile app modal coming soon!', 'info');
+}
+
+function showAddApiAssetModal() {
+  showToast('API asset modal coming soon!', 'info');
+}
+
+function editMobileApp(id) {
+  showToast('Edit mobile app coming soon!', 'info');
+}
+
+function editApiAsset(id) {
+  showToast('Edit API asset coming soon!', 'info');
+}
+
+function deleteMobileApp(id) {
+  showToast('Delete mobile app coming soon!', 'info');
+}
+
+function deleteApiAsset(id) {
+  showToast('Delete API asset coming soon!', 'info');
+}
+
 async function viewProjectDetails(id) {
-  showToast('Project details view coming soon!', 'info');
-  // TODO: Implement detailed project view with tabs for domains, mobile apps, API assets
+  openProjectDetail(id, '');
 }
 
 // ── GitHub ─────────────────────────────────────────────────────────────────────

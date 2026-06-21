@@ -31,6 +31,8 @@ services:
       TZ: UTC
       LOG_LEVEL: INFO
       PYTHONUNBUFFERED: "1"
+      # Use DELETE journal mode for Docker on Windows (WAL has I/O issues with volume mounts)
+      SQLITE_JOURNAL_MODE: "DELETE"
 
       # Set this to lock in the admin password (recommended for anything
       # beyond a personal/local installation).  If unset, a random password

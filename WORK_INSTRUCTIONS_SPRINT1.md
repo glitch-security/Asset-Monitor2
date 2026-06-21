@@ -14,6 +14,35 @@ Implement advanced DNS enumeration features including:
 
 ---
 
+## Implementation & Testing Protocol — Read This First
+
+This sprint was previously a single 4-6 hour block covering 4 modules + DB schema + scheduler + tests. Per `CLAUDE.md`'s Incremental Implementation Protocol, it is now executed as **5 separate checkpoints, each a full implement → test → commit cycle, in its own session turn-sequence**. Do not implement more than one checkpoint without testing and committing first — this is what previously risked exhausting context.
+
+Checkpoint order:
+
+| # | Checkpoint | Task(s) | Est. time |
+|---|---|---|---|
+| 1 | Extended DNS records | Task 1.1 | ~1 hr |
+| 2 | DNSSEC analysis | Task 1.2 | ~1 hr |
+| 3 | Email security | Task 1.3 | ~1-1.5 hr |
+| 4 | Nameserver security | Task 1.4 | ~1-1.5 hr |
+| 5 | DB schema + scheduler integration + full sprint test pass | DB Updates, Scheduler Integration, Testing Checklist | ~1 hr |
+
+For each checkpoint:
+1. Implement only that checkpoint's task.
+2. Test it locally with Docker running inside WSL (see `CLAUDE.md` → Local Testing Protocol):
+   ```bash
+   wsl docker compose up -d --build
+   wsl docker compose exec <service> python -c "<quick manual exercise of the new function>"
+   wsl docker compose logs -f --tail=100 <service>
+   wsl docker compose exec <service> pytest tests/ -k <relevant_keyword> -v
+   ```
+3. Fix any errors before proceeding — do not start the next checkpoint with known-broken code from this one.
+4. Commit the checkpoint (`feat(dns): <checkpoint description>`).
+5. Update `PROGRESS.md` checkbox for that task before moving to the next checkpoint.
+
+---
+
 ## Task 1.1: Extended DNS Records Module
 
 **File:** `src/enumeration/dns_records.py` (extends existing)
@@ -537,5 +566,5 @@ db.update_subdomain_scan(dns_records=dns_records, dnssec_info=dnssec, ...)
 
 ---
 
-**Status:** Ready to implement
-**Estimated Time:** 4-6 hours
+**Status:** Ready to implement — execute as 5 sequential checkpoints per the Implementation & Testing Protocol above, each tested locally (Docker in WSL) and committed before starting the next.
+**Estimated Time:** 4-6 hours total, split across 5 checkpoints (do not implement in a single uninterrupted pass)

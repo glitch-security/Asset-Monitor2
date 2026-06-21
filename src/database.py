@@ -692,12 +692,15 @@ class DatabaseManager:
             echo=False,
         )
 
-        # Enable WAL journal mode and foreign-key enforcement for every
-        # new SQLite connection.
+        # Enable journal mode and foreign-key enforcement for every
+        # new SQLite connection. Journal mode can be overridden via
+        # SQLITE_JOURNAL_MODE env var (useful for Docker on Windows).
+        import os
+        journal_mode = os.getenv("SQLITE_JOURNAL_MODE", "WAL")
         @event.listens_for(self._engine, "connect")
         def _set_sqlite_pragmas(dbapi_conn: Any, _connection_record: Any) -> None:
             cursor = dbapi_conn.cursor()
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute(f"PRAGMA journal_mode={journal_mode}")
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
@@ -759,6 +762,25 @@ class DatabaseManager:
                 conn.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE domains ADD COLUMN scope_type VARCHAR(32) DEFAULT 'unknown' NOT NULL"
+                    )
+                )
+
+            # Add company_id to domains if missing
+            rows = conn.execute(
+                __import__("sqlalchemy").text("PRAGMA table_info(domains)")
+            ).fetchall()
+            existing_cols = {r[1] for r in rows}
+            if "company_id" not in existing_cols:
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE domains ADD COLUMN company_id INTEGER "
+                        "REFERENCES companies(id) ON DELETE SET NULL"
+                    )
+                )
+                # Create index on company_id for faster lookups
+                conn.execute(
+                    __import__("sqlalchemy").text(
+                        "CREATE INDEX IF NOT EXISTS ix_domains_company_id ON domains(company_id)"
                     )
                 )
 

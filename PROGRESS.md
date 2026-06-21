@@ -83,74 +83,74 @@
 ---
 
 ### Sprint 3: Dangerous Function Detection
-**Estimated Time:** 6-8 hours
+**Estimated Time:** 6-8 hours, across ~5 checkpoints (one per task below — see Context Management Strategy)
 **Status:** Not started
 
-**Tasks:**
-- [ ] Create pattern databases for Python, JS, Go, Java, Rust
-- [ ] Implement code analyzers
-- [ ] Language detection
-- [ ] AST-based analysis
-- [ ] Result aggregation
+**Tasks (each is its own implement → test-locally-via-WSL-Docker → commit checkpoint):**
+- [ ] Checkpoint 1: Pattern databases for Python, JS, Go, Java, Rust
+- [ ] Checkpoint 2: Language detection
+- [ ] Checkpoint 3: Code analyzers (per-language)
+- [ ] Checkpoint 4: AST-based analysis
+- [ ] Checkpoint 5: Result aggregation + scheduler/DB integration + full sprint test pass
 
-**Work Instructions:** TO BE CREATED
+**Work Instructions:** TO BE CREATED — when created, must use the checkpoint table format from `WORK_INSTRUCTIONS_SPRINT1.md`
 
 ---
 
 ### Sprint 4: Web Security Automation
-**Estimated Time:** 6-8 hours
+**Estimated Time:** 6-8 hours, across ~5 checkpoints (one per task below — see Context Management Strategy)
 **Status:** Not started
 
-**Tasks:**
-- [ ] HTTP security header analyzer
-- [ ] CORS misconfiguration detection
-- [ ] TLS/SSL configuration analyzer
-- [ ] JavaScript dependency scanner
-- [ ] API discovery module
+**Tasks (each is its own implement → test-locally-via-WSL-Docker → commit checkpoint):**
+- [ ] Checkpoint 1: HTTP security header analyzer
+- [ ] Checkpoint 2: CORS misconfiguration detection
+- [ ] Checkpoint 3: TLS/SSL configuration analyzer
+- [ ] Checkpoint 4: JavaScript dependency scanner
+- [ ] Checkpoint 5: API discovery module + scheduler/DB integration + full sprint test pass
 
-**Work Instructions:** TO BE CREATED
+**Work Instructions:** TO BE CREATED — when created, must use the checkpoint table format from `WORK_INSTRUCTIONS_SPRINT1.md`
 
 ---
 
 ### Sprint 5: Asset Discovery Expansion
-**Estimated Time:** 8-10 hours
+**Estimated Time:** 8-10 hours, across ~5 checkpoints (one per task below — see Context Management Strategy)
 **Status:** Not started
 
-**Tasks:**
-- [ ] Mobile app discovery (Android)
-- [ ] Cloud resource discovery (AWS/Azure/GCP)
-- [ ] API endpoint discovery
-- [ ] Certificate transparency monitoring
-- [ ] Technology stack monitoring
+**Tasks (each is its own implement → test-locally-via-WSL-Docker → commit checkpoint):**
+- [ ] Checkpoint 1: Mobile app discovery (Android)
+- [ ] Checkpoint 2: Cloud resource discovery (AWS/Azure/GCP)
+- [ ] Checkpoint 3: API endpoint discovery
+- [ ] Checkpoint 4: Certificate transparency monitoring
+- [ ] Checkpoint 5: Technology stack monitoring + scheduler/DB integration + full sprint test pass
 
-**Work Instructions:** TO BE CREATED
+**Work Instructions:** TO BE CREATED — when created, must use the checkpoint table format from `WORK_INSTRUCTIONS_SPRINT1.md`
 
 ---
 
 ### Sprint 6: Scoring & Alerting
-**Estimated Time:** 4-6 hours
+**Estimated Time:** 4-6 hours, across ~4 checkpoints (one per task below — see Context Management Strategy)
 **Status:** Not started
 
-**Tasks:**
-- [ ] Context-aware priority scoring
-- [ ] Alert routing and deduplication
-- [ ] Real-time event monitoring
-- [ ] Scheduled scanning profiles
-- [ ] Comprehensive reporting
+**Tasks (each is its own implement → test-locally-via-WSL-Docker → commit checkpoint):**
+- [ ] Checkpoint 1: Context-aware priority scoring
+- [ ] Checkpoint 2: Alert routing and deduplication
+- [ ] Checkpoint 3: Real-time event monitoring + scheduled scanning profiles
+- [ ] Checkpoint 4: Comprehensive reporting + full sprint test pass
 
-**Work Instructions:** TO BE CREATED
+**Work Instructions:** TO BE CREATED — when created, must use the checkpoint table format from `WORK_INSTRUCTIONS_SPRINT1.md`
 
 ---
 
 ## Context Management Strategy
 
-To avoid context overflow during implementation:
+To avoid context overflow during implementation (see `CLAUDE.md` → Incremental Implementation Protocol for the full rules):
 
-1. **One Sprint at a Time** - Complete each sprint fully before starting the next
-2. **Sub-Agents** - Use `Agent` tool for major sub-tasks (each module implementation)
-3. **Work Instruction Files** - Each sprint has a work instruction file for reference
-4. **Commit Often** - Commit completed work to git before context fills
-5. **Update Progress** - Keep this file updated with actual completion status
+1. **One checkpoint at a time, not one sprint at a time** - Each sprint must be broken into atomic checkpoints (one module/file per checkpoint). Never implement more than one checkpoint without testing and committing first. A sprint with 3+ independent modules (e.g. Sprint 1, Sprint 3, Sprint 5) is executed across multiple session turn-sequences, never in one continuous pass.
+2. **Test locally before moving to the next checkpoint** - Run the affected service with Docker inside WSL (`wsl docker compose up -d --build`, exercise the new code, check logs, run the relevant tests) and fix any errors before starting the next checkpoint. Testing is not deferred to "after the whole sprint is done."
+3. **Sub-Agents** - Use the `Explore` or `general-purpose` agent for research-heavy or independent sub-tasks (pattern research, multi-file surveys) to keep the main context window free for implementation.
+4. **Work Instruction Files** - Each sprint has a work instruction file for reference; each must lay out its checkpoints explicitly (see `WORK_INSTRUCTIONS_SPRINT1.md` for the template).
+5. **Commit Often** - Commit after every checkpoint, not just at sprint end, so progress survives a context reset.
+6. **Update Progress** - Keep this file's checkboxes updated per-checkpoint, immediately after each one lands - not in a batch at the end.
 
 ---
 
