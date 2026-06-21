@@ -205,9 +205,12 @@
     <i class="bi bi-shield-lock-fill"></i> AssetMonitor
   </button>
   <div class="am-nav-right">
-    <div id="scan-running-indicator" class="d-none align-items-center gap-2">
-      <div class="spinner-border scan-spinner" style="color:var(--accent);" role="status"></div>
-      <span style="font-size:.75rem;color:var(--accent);" id="scan-running-label">Scanning...</span>
+    <div class="dropdown" id="scan-running-indicator" style="display:none;">
+      <button class="btn btn-sm dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" style="background:transparent;border:none;color:var(--accent);">
+        <span class="spinner-border spinner-border-sm scan-spinner" role="status"></span>
+        <span style="font-size:.75rem;" id="scan-running-label">Scanning...</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end" id="scan-running-list" style="min-width:280px;font-size:.8rem;"></ul>
     </div>
     <span style="font-size:.72rem;color:var(--text3);" id="last-scan-label">Fetching...</span>
     <span class="am-timer" id="refresh-timer">60s</span>
@@ -1007,6 +1010,34 @@
         <button type="button" class="btn btn-primary btn-sm" id="assign-profile-btn" onclick="submitAssignProfile()">
           <i class="bi bi-check-lg"></i> Assign Profile
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Remove Target From Project Modal -->
+<div class="modal fade" id="removeTargetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dark">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Remove Target</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:.85rem;">What do you want to do with <strong id="rt-domain-name"></strong>?</p>
+        <div class="d-flex flex-column gap-2">
+          <button type="button" class="btn btn-outline-warning btn-sm text-start" onclick="confirmRemoveTarget('unlink')">
+            <i class="bi bi-link-45deg"></i> <strong>Unlink from project</strong>
+            <div class="text-muted" style="font-size:.72rem;">Removes it from this project only. The domain, its subdomains, and scan history stay in the global Targets list and can be re-attached later.</div>
+          </button>
+          <button type="button" class="btn btn-outline-danger btn-sm text-start" onclick="confirmRemoveTarget('delete')">
+            <i class="bi bi-trash"></i> <strong>Delete permanently</strong>
+            <div class="text-muted" style="font-size:.72rem;">Deletes the domain and cascades to all its subdomains and scan data. This cannot be undone.</div>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
       </div>
     </div>
   </div>
@@ -2107,7 +2138,15 @@ async function openDomainDetail(domainId, domainName) {
 
 function closeDomainDetail() {
   document.getElementById('domain-detail').classList.remove('visible');
-  document.getElementById('main-dashboard').style.display = '';
+  // If this domain was opened from inside a project view, go back to that
+  // project instead of the main dashboard — _pdProjectId stays set the whole
+  // time the domain detail overlay is open (openDomainDetail never clears it).
+  if (_pdProjectId) {
+    document.getElementById('project-detail').style.display = '';
+    document.getElementById('main-dashboard').style.display = 'none';
+  } else {
+    document.getElementById('main-dashboard').style.display = '';
+  }
   _ddDomainId   = null;
   _ddDomainName = null;
   _ddData       = null;
@@ -2298,7 +2337,7 @@ async function submitAssignProfile() {
       body: JSON.stringify({profile_id: profileId}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     bootstrap.Modal.getInstance(document.getElementById('assignProfileModal')).hide();
     showToast('Profile updated', 'success');
     await Promise.all([loadTargets(), loadProfiles()]);
@@ -2384,7 +2423,7 @@ async function submitProfile() {
     const method = _editProfileId ? 'PUT' : 'POST';
     const r = await _mfetch(url, {method, body: JSON.stringify(body)});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
     showToast(_editProfileId ? 'Profile updated' : 'Profile created', 'success');
     await loadProfiles();
@@ -2396,7 +2435,7 @@ async function deleteProfile(id, name) {
   if (!confirm(`Delete profile "${name}"?\nDomains using this profile will revert to Default.`)) return;
   try {
     const r = await _mfetch(`/api/profiles/${id}`, {method:'DELETE'});
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     showToast(`Deleted profile: ${name}`, 'success');
     await Promise.all([loadProfiles(), loadTargets()]);
   } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
@@ -2521,7 +2560,7 @@ async function submitAddTarget() {
       body: JSON.stringify({type, value, scan_now: scanNow, techniques, website_techniques, company_id: companyId}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
 
     // Assign profile if one was selected and this is a domain
     if (type === 'domain' && profileId && d.id) {
@@ -2551,7 +2590,7 @@ async function deleteDomain(id, name) {
   if (!confirm(`Delete domain "${name}" and all its subdomains?\n\nThis cannot be undone.`)) return;
   try {
     const r = await _mfetch(`/api/targets/domain/${id}`, {method: 'DELETE'});
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     showToast(`Deleted domain: ${name}`, 'success');
     if (_ddDomainId === id) closeDomainDetail();
     await loadTargets();
@@ -2559,11 +2598,45 @@ async function deleteDomain(id, name) {
   } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
 }
 
+let _rtDomainId = null;
+let _rtDomainName = null;
+
+function removeTargetFromProject(id, name) {
+  _rtDomainId = id;
+  _rtDomainName = name;
+  document.getElementById('rt-domain-name').textContent = name;
+  new bootstrap.Modal(document.getElementById('removeTargetModal')).show();
+}
+
+async function confirmRemoveTarget(mode) {
+  const id = _rtDomainId, name = _rtDomainName;
+  if (id == null) return;
+  try {
+    let r;
+    if (mode === 'unlink') {
+      r = await _mfetch(`/api/targets/domain/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({company_id: null}),
+      });
+    } else {
+      r = await _mfetch(`/api/targets/domain/${id}`, {method: 'DELETE'});
+    }
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
+    showToast(mode === 'unlink' ? `Unlinked "${name}" from project` : `Deleted domain: ${name}`, 'success');
+    bootstrap.Modal.getInstance(document.getElementById('removeTargetModal')).hide();
+    if (_ddDomainId === id) closeDomainDetail();
+    if (_pdProjectId) await openProjectDetail(_pdProjectId, _pdProjectName);
+    await loadTargets();
+    await loadSummary();
+  } catch(e) { showToast('Remove failed: ' + e.message, 'danger'); }
+  finally { _rtDomainId = null; _rtDomainName = null; }
+}
+
 async function deleteWebsite(url) {
   if (!confirm(`Remove website "${url}" from monitoring?\n\nThis removes it from the watch list only.`)) return;
   try {
     const r = await _mfetch('/api/websites', {method: 'DELETE', body: JSON.stringify({url})});
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     showToast(`Removed website: ${url}`, 'success');
     await loadTargets();
   } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
@@ -2576,7 +2649,7 @@ async function triggerDomainScan(domain) {
       body: JSON.stringify({domain}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     showToast(`Scan started for ${domain}`, 'info');
     startScanStatusPolling();
   } catch(e) { showToast('Scan trigger failed: ' + e.message, 'danger'); }
@@ -2589,31 +2662,56 @@ async function triggerFullScan() {
       body: JSON.stringify({}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     showToast('Full scan started for all targets', 'info');
     startScanStatusPolling();
   } catch(e) { showToast('Scan trigger failed: ' + e.message, 'danger'); }
 }
 
 // ── Scan status polling ───────────────────────────────────────────────────────
+function fmtScanStarted(iso) {
+  if (!iso) return '';
+  const secs = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (secs < 60) return `${secs}s ago`;
+  return `${Math.round(secs / 60)}m ago`;
+}
+
+async function stopScan(scanId) {
+  if (!confirm('Stop this scan? Subdomains/ports already found will be kept.')) return;
+  try {
+    const r = await _mfetch('/api/scan/stop', {method: 'POST', body: JSON.stringify({scan_id: scanId})});
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
+    showToast('Scan stopped', 'info');
+    await loadScanStatus();
+  } catch(e) { showToast('Stop failed: ' + e.message, 'danger'); }
+}
+
 async function loadScanStatus() {
   try {
     const r = await fetch('/api/scan/status');
     const s = await r.json();
     const indicator = document.getElementById('scan-running-indicator');
     const label     = document.getElementById('scan-running-label');
-    const scanBtns  = document.querySelectorAll('[onclick^="triggerFullScan"], [onclick^="triggerDomainScan"]');
-    if (s.running) {
-      indicator.classList.remove('d-none');
-      indicator.classList.add('d-flex');
-      label.textContent = s.domain ? `Scanning ${s.domain}…` : 'Full scan running…';
-      scanBtns.forEach(b => b.disabled = true);
+    const list       = document.getElementById('scan-running-list');
+    const scans      = s.scans || [];
+    const scanBtns   = document.querySelectorAll('[onclick^="triggerFullScan"], [onclick^="triggerDomainScan"]');
+    const atCapacity = scans.length >= (s.max_concurrent || 3);
+
+    if (scans.length > 0) {
+      indicator.style.display = 'block';
+      label.textContent = `Scanning ${scans.length}/${s.max_concurrent || 3}…`;
+      list.innerHTML = scans.map(sc => `
+        <li class="dropdown-item-text d-flex align-items-center justify-content-between gap-2">
+          <span>${sc.domain ? esc(sc.domain) : '<em>Full scan</em>'}<br><span class="text-muted" style="font-size:.7rem;">${fmtScanStarted(sc.started_at)}</span></span>
+          <button class="btn btn-xs btn-outline-danger" style="font-size:.65rem;padding:1px 5px;" onclick="event.stopPropagation();stopScan('${sc.id}')"><i class="bi bi-stop-fill"></i> Stop</button>
+        </li>`).join('');
+      scanBtns.forEach(b => b.disabled = atCapacity);
       if (!_scanPollTimer) {
         _scanPollTimer = setInterval(loadScanStatus, 4000);
       }
     } else {
-      indicator.classList.add('d-none');
-      indicator.classList.remove('d-flex');
+      indicator.style.display = 'none';
+      list.innerHTML = '';
       scanBtns.forEach(b => b.disabled = false);
       if (_scanPollTimer) {
         clearInterval(_scanPollTimer);
@@ -2621,6 +2719,8 @@ async function loadScanStatus() {
         await refreshAll(false);
         if (s.last_events > 0) {
           showToast(`Scan complete — ${s.last_subs_found} subdomains, ${s.last_events} events`, 'success');
+        } else if (s.last_error) {
+          showToast(`Scan failed: ${s.last_error}`, 'danger');
         }
       }
     }
@@ -2782,7 +2882,7 @@ async function saveSettings() {
       body: JSON.stringify(payload),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     statusEl.textContent = '✓ Saved';
     showToast('Settings saved', 'success');
     setTimeout(() => { statusEl.textContent = ''; }, 3000);
@@ -2846,7 +2946,7 @@ async function createUser() {
       body: JSON.stringify({username, password, role}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     document.getElementById('new-username').value = '';
     document.getElementById('new-password').value = '';
     document.getElementById('create-user-form').classList.add('d-none');
@@ -2860,7 +2960,7 @@ async function deleteUser(username) {
   try {
     const r = await _mfetch(`/api/users/${encodeURIComponent(username)}`, {method: 'DELETE'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     showToast(`Deleted user: ${username}`, 'success');
     await loadUsers();
   } catch(e) { showToast('Delete failed: ' + e.message, 'danger'); }
@@ -2876,7 +2976,7 @@ async function changeMyPassword() {
       body: JSON.stringify({password: newPwd}),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     document.getElementById('my-new-password').value = '';
     showToast('Password updated', 'success');
   } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
@@ -2908,7 +3008,7 @@ async function cycleScope(domainId, currentScope) {
       method: 'PATCH',
       body: JSON.stringify({scope_type: next}),
     });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     showToast(`Scope set to ${labels[next]}`, 'success');
     await loadTargets();
   } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
@@ -2920,7 +3020,7 @@ async function runDorking(domain) {
   try {
     const r = await _mfetch(`/api/dorking/${encodeURIComponent(domain)}`, {method: 'POST'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     const n = d.findings || 0;
     showToast(`Dorking complete for ${domain}: ${n} finding(s)`, n > 0 ? 'warning' : 'success');
     await loadChanges();
@@ -2933,7 +3033,7 @@ async function runCloudDiscovery(domain) {
   try {
     const r = await _mfetch(`/api/cloud-assets/${encodeURIComponent(domain)}`, {method: 'POST'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     const n = d.findings || 0;
     showToast(`Cloud discovery for ${domain}: ${n} asset(s) found`, n > 0 ? 'warning' : 'success');
     await loadChanges();
@@ -2946,7 +3046,7 @@ async function runDirScan(subdomainId, fqdn) {
   try {
     const r = await _mfetch(`/api/dir-scan/${subdomainId}`, {method: 'POST'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     showToast(`Dir scan on ${fqdn}: ${d.findings} path(s) found`, d.findings > 0 ? 'warning' : 'success');
     await loadChanges();
   } catch(e) { showToast('Dir scan failed: ' + e.message, 'danger'); }
@@ -2958,7 +3058,7 @@ async function runApiDiscovery(subdomainId, fqdn) {
   try {
     const r = await _mfetch(`/api/api-discovery/${subdomainId}`, {method: 'POST'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
     showToast(`API discovery on ${fqdn}: ${d.findings} endpoint(s) found`, d.findings > 0 ? 'warning' : 'success');
     await loadChanges();
   } catch(e) { showToast('API discovery failed: ' + e.message, 'danger'); }
@@ -3079,7 +3179,7 @@ async function submitProject() {
       method,
       body: JSON.stringify(data),
     });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     _projectModal.hide();
     showToast('Project saved successfully', 'success');
     await loadProjects();
@@ -3095,7 +3195,7 @@ async function deleteProject(id, name) {
 
   try {
     const r = await _mfetch(`/api/projects/${id}`, {method: 'DELETE'});
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
     showToast('Project deleted successfully', 'success');
     await loadProjects();
   } catch(e) {
@@ -3201,6 +3301,9 @@ function renderProjectTargets() {
       <td>
         <button class="btn btn-xs btn-outline-secondary me-1" style="font-size:.7rem;padding:2px 6px;" onclick="triggerDomainScan('${escapeHtml(d.domain)}')">
           <i class="bi bi-play-fill"></i> Scan
+        </button>
+        <button class="btn btn-xs btn-outline-danger" style="font-size:.7rem;padding:2px 6px;" onclick="removeTargetFromProject(${d.id},'${escapeHtml(d.domain)}')" title="Remove from project">
+          <i class="bi bi-x-lg"></i>
         </button>
       </td>
     </tr>`;
@@ -3590,7 +3693,7 @@ async function submitAddGitHubRepo() {
       }),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
 
     bootstrap.Modal.getInstance(document.getElementById('addGitHubRepoModal')).hide();
     showToast(`Repository ${org}/${repo} added to monitoring`, 'success');
@@ -3611,7 +3714,7 @@ async function deleteGitHubRepo(repoId, fullName) {
   try {
     const r = await _mfetch(`/api/github/repos/${repoId}`, {method: 'DELETE'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
 
     showToast(`Repository ${fullName} removed`, 'success');
     await loadGitHubRepos();
@@ -3624,7 +3727,7 @@ async function triggerGitHubScan(repoId) {
   try {
     const r = await _mfetch(`/api/github/scan/${repoId}`, {method: 'POST'});
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
 
     showToast('GitHub scan started', 'info');
   } catch(e) {
@@ -3638,7 +3741,7 @@ async function markFindingReviewed(findingId) {
       method: 'PUT',
       body: JSON.stringify({false_positive: false}),
     });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
 
     showToast('Finding marked as reviewed', 'success');
     await loadGitHubFindings();
@@ -3653,7 +3756,7 @@ async function markFindingFalsePositive(findingId) {
       method: 'PUT',
       body: JSON.stringify({false_positive: true}),
     });
-    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    if (!r.ok) { const eb = await r.json().catch(() => ({})); throw new Error(eb.detail || eb.error || r.statusText); }
 
     showToast('Finding marked as false positive', 'success');
     await loadGitHubFindings();
@@ -3705,7 +3808,7 @@ async function saveGitHubConfig() {
       body: JSON.stringify(payload),
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    if (!r.ok) throw new Error(d.detail || d.error || r.statusText);
 
     bootstrap.Modal.getInstance(document.getElementById('githubConfigModal')).hide();
     showToast('GitHub configuration saved', 'success');

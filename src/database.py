@@ -1575,6 +1575,22 @@ class DatabaseManager:
             session.delete(obj)
             return True
 
+    def unlink_domain_from_company(self, domain_id: int) -> bool:
+        """Detach a domain from its project without deleting it or any of its data.
+
+        Sets ``company_id`` to ``None``. The domain, its subdomains, scans, and
+        change history are all preserved and the domain remains visible in the
+        global Targets list.
+
+        Returns True if the domain was found, False if not found.
+        """
+        with self.get_session() as session:
+            obj = session.get(Domain, domain_id)
+            if obj is None:
+                return False
+            obj.company_id = None
+            return True
+
     def get_all_domains_with_stats(self) -> List[Dict[str, Any]]:
         """Return all root domains with subdomain counts, last scan time, and assigned profile."""
         from sqlalchemy import case as sa_case

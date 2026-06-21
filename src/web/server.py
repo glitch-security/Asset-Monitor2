@@ -49,6 +49,7 @@ import logging
 import os
 import re
 import secrets
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -80,16 +81,57 @@ _SCREENSHOT_DIR = "data/screenshots"
 _CSRF_EXEMPT_METHODS = frozenset(["GET", "HEAD", "OPTIONS"])
 _AUTH_EXEMPT_PREFIXES = ("/login", "/logout", "/health", "/screenshots/", "/static/")
 
+_MAX_CONCURRENT_SCANS = 3
 _scan_lock = asyncio.Lock()
-_scan_state: dict = {
-    "running": False,
-    "started_at": None,
-    "domain": None,
-    "error": None,
+_scans: dict = {}  # scan_id -> {"id", "domain" (None for full scan), "started_at", "task"}
+_last_scan_result: dict = {
     "last_completed": None,
     "last_subs_found": 0,
     "last_events": 0,
+    "last_error": None,
 }
+
+
+async def _start_domain_scan(sched_manager: "SchedManager", domain: str, techniques: dict) -> dict:
+    """Reserve a scan slot for ``domain`` and launch it as a background task.
+
+    Raises HTTPException(409) if the concurrent-scan limit is reached or this
+    domain is already being scanned.
+    """
+    async with _scan_lock:
+        if len(_scans) >= _MAX_CONCURRENT_SCANS:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Maximum of {_MAX_CONCURRENT_SCANS} concurrent scans already running",
+            )
+        if any(s["domain"] == domain for s in _scans.values()):
+            raise HTTPException(status_code=409, detail=f"A scan for {domain} is already in progress")
+        scan_id = uuid.uuid4().hex[:12]
+        entry = {"id": scan_id, "domain": domain, "started_at": datetime.now(timezone.utc).isoformat()}
+        _scans[scan_id] = entry
+    entry["task"] = asyncio.create_task(_run_domain_scan(sched_manager, scan_id, domain, techniques))
+    return entry
+
+
+async def _start_full_scan(sched_manager: "SchedManager") -> dict:
+    """Reserve a scan slot for a full scan (all domains) and launch it.
+
+    Raises HTTPException(409) if the concurrent-scan limit is reached or a
+    full scan is already running.
+    """
+    async with _scan_lock:
+        if len(_scans) >= _MAX_CONCURRENT_SCANS:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Maximum of {_MAX_CONCURRENT_SCANS} concurrent scans already running",
+            )
+        if any(s["domain"] is None for s in _scans.values()):
+            raise HTTPException(status_code=409, detail="A full scan is already in progress")
+        scan_id = uuid.uuid4().hex[:12]
+        entry = {"id": scan_id, "domain": None, "started_at": datetime.now(timezone.utc).isoformat()}
+        _scans[scan_id] = entry
+    entry["task"] = asyncio.create_task(_run_full_scan(sched_manager, scan_id))
+    return entry
 
 
 def _ev_to_dict(ev: Any) -> dict:
@@ -566,8 +608,14 @@ def build_app(
                 dom = db.add_domain(value, company_id=company_id)
                 result: dict = {"type": "domain", "id": dom.id, "value": dom.domain}
                 if scan_now and sched_manager:
-                    asyncio.create_task(_run_domain_scan(sched_manager, dom.domain, techniques))
-                    result["scan_triggered"] = True
+                    try:
+                        entry = await _start_domain_scan(sched_manager, dom.domain, techniques)
+                        result["scan_triggered"] = True
+                        result["scan_id"] = entry["id"]
+                    except HTTPException as exc:
+                        # Target was added successfully either way; scanning is best-effort.
+                        result["scan_triggered"] = False
+                        result["scan_error"] = exc.detail
 
             elif target_type == "subdomain":
                 parts = value.split(".")
@@ -578,8 +626,13 @@ def build_app(
                 )
                 result = {"type": "subdomain", "id": sub.id, "value": sub.fqdn, "is_new": is_new}
                 if scan_now and sched_manager:
-                    asyncio.create_task(_run_domain_scan(sched_manager, parent.domain, techniques))
-                    result["scan_triggered"] = True
+                    try:
+                        entry = await _start_domain_scan(sched_manager, parent.domain, techniques)
+                        result["scan_triggered"] = True
+                        result["scan_id"] = entry["id"]
+                    except HTTPException as exc:
+                        result["scan_triggered"] = False
+                        result["scan_error"] = exc.detail
 
             else:  # website
                 from ..monitoring.website_store import add_website
@@ -587,8 +640,13 @@ def build_app(
                 add_website(value, website_techniques if website_techniques else None)
                 result = {"type": "website", "value": value}
                 if scan_now and sched_manager:
-                    asyncio.create_task(_run_full_scan(sched_manager))
-                    result["scan_triggered"] = True
+                    try:
+                        entry = await _start_full_scan(sched_manager)
+                        result["scan_triggered"] = True
+                        result["scan_id"] = entry["id"]
+                    except HTTPException as exc:
+                        result["scan_triggered"] = False
+                        result["scan_error"] = exc.detail
 
             return result
 
@@ -622,8 +680,14 @@ def build_app(
             if not ok:
                 raise HTTPException(status_code=404, detail="Domain not found")
             updated_fields.append("scope_type")
+        if "company_id" in data and data["company_id"] is None:
+            # Unlink from project — domain, subdomains, and scan history are preserved.
+            ok = db.unlink_domain_from_company(domain_id)
+            if not ok:
+                raise HTTPException(status_code=404, detail="Domain not found")
+            updated_fields.append("company_id")
         if not updated_fields:
-            raise HTTPException(status_code=400, detail="profile_id or scope_type is required")
+            raise HTTPException(status_code=400, detail="profile_id, scope_type, or company_id is required")
         return {"updated": True, "domain_id": domain_id, "fields": updated_fields}
 
     @app.delete("/api/targets/domain/{domain_id}", dependencies=[Depends(_require_admin)])
@@ -791,8 +855,6 @@ def build_app(
     async def api_scan_trigger(request: Request):
         if not sched_manager:
             raise HTTPException(status_code=503, detail="Scheduler not available in this mode")
-        if _scan_state["running"]:
-            raise HTTPException(status_code=409, detail="A scan is already in progress")
 
         try:
             data = await request.json()
@@ -802,15 +864,39 @@ def build_app(
         techniques = data.get("techniques") or {}
 
         if domain:
-            asyncio.create_task(_run_domain_scan(sched_manager, domain, techniques))
+            entry = await _start_domain_scan(sched_manager, domain, techniques)
         else:
-            asyncio.create_task(_run_full_scan(sched_manager))
+            entry = await _start_full_scan(sched_manager)
 
-        return {"started": True, "domain": domain}
+        return {"started": True, "scan_id": entry["id"], "domain": domain}
+
+    @app.post("/api/scan/stop", dependencies=[Depends(_require_admin)])
+    async def api_scan_stop(request: Request):
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        scan_id = data.get("scan_id")
+        if not scan_id:
+            raise HTTPException(status_code=400, detail="scan_id is required")
+        entry = _scans.get(scan_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="No running scan with that scan_id")
+        entry["task"].cancel()
+        return {"stopping": True, "scan_id": scan_id}
 
     @app.get("/api/scan/status")
     async def api_scan_status():
-        return dict(_scan_state)
+        scans = [
+            {"id": s["id"], "domain": s["domain"], "started_at": s["started_at"]}
+            for s in _scans.values()
+        ]
+        return {
+            "running": len(scans) > 0,
+            "scans": scans,
+            "max_concurrent": _MAX_CONCURRENT_SCANS,
+            **_last_scan_result,
+        }
 
     # ────────────────────────────────────────────────────────────────────────
     # API — dorking / attack surface scan
@@ -1634,49 +1720,46 @@ def build_app(
 
 async def _run_domain_scan(
     sched_manager: "SchedManager",
+    scan_id: str,
     domain: str,
     techniques: dict,
 ) -> None:
-    async with _scan_lock:
-        if _scan_state["running"]:
-            return
-        _scan_state.update({
-            "running": True,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "domain": domain,
-            "error": None,
-        })
     try:
         sub_count, event_count = await sched_manager.run_domain_scan(
             domain, technique_overrides=techniques or None
         )
-        _scan_state.update({
-            "running": False,
+        _last_scan_result.update({
             "last_completed": datetime.now(timezone.utc).isoformat(),
             "last_subs_found": sub_count,
             "last_events": event_count,
+            "last_error": None,
         })
+    except asyncio.CancelledError:
+        logger.info("Domain scan for %s stopped by user", domain)
+        # Any subdomains/ports already committed by the scheduler before
+        # cancellation remain in the DB — scans write incrementally.
+        raise
     except Exception as exc:
         logger.error("Background domain scan failed: %s", exc, exc_info=True)
-        _scan_state.update({"running": False, "error": str(exc)})
+        _last_scan_result.update({"last_error": str(exc)})
+    finally:
+        async with _scan_lock:
+            _scans.pop(scan_id, None)
 
 
-async def _run_full_scan(sched_manager: "SchedManager") -> None:
-    async with _scan_lock:
-        if _scan_state["running"]:
-            return
-        _scan_state.update({
-            "running": True,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "domain": None,
-            "error": None,
-        })
+async def _run_full_scan(sched_manager: "SchedManager", scan_id: str) -> None:
     try:
         await sched_manager.run_full_scan()
-        _scan_state.update({
-            "running": False,
+        _last_scan_result.update({
             "last_completed": datetime.now(timezone.utc).isoformat(),
+            "last_error": None,
         })
+    except asyncio.CancelledError:
+        logger.info("Full scan %s stopped by user", scan_id)
+        raise
     except Exception as exc:
         logger.error("Background full scan failed: %s", exc, exc_info=True)
-        _scan_state.update({"running": False, "error": str(exc)})
+        _last_scan_result.update({"last_error": str(exc)})
+    finally:
+        async with _scan_lock:
+            _scans.pop(scan_id, None)

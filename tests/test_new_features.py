@@ -473,6 +473,40 @@ class TestWebServerAPIs(unittest.TestCase):
                 self.assertEqual(len(d), 1)
                 self.assertEqual(d[0]['scope_type'], 'in_scope')
 
+                # --- Unlink-from-project: attach to a project, then detach ---
+                headers = {"X-CSRF-Token": csrf, "Content-Type": "application/json"}
+                r = await client.post("/api/projects", json={"name": "Unlink Test Project"}, headers=headers)
+                self.assertEqual(r.status_code, 201)
+                project_id = r.json()['id']
+
+                r = await client.post("/api/targets", json={
+                    "type": "domain", "value": "unlink-test.example.com",
+                    "scan_now": False, "company_id": project_id,
+                }, headers=headers)
+                self.assertEqual(r.status_code, 201)
+                unlink_domain_id = r.json()['id']
+
+                r = await client.get(f"/api/projects/{project_id}")
+                proj_domains = [x['domain'] for x in r.json().get('domains', [])]
+                self.assertIn('unlink-test.example.com', proj_domains)
+
+                r = await client.patch(f"/api/targets/domain/{unlink_domain_id}", json={"company_id": None}, headers=headers)
+                self.assertEqual(r.status_code, 200)
+                self.assertIn('company_id', r.json()['fields'])
+
+                # Still present in the global Targets list after unlinking
+                r = await client.get("/api/domains")
+                self.assertIn('unlink-test.example.com', [x['domain'] for x in r.json()])
+
+                # No longer listed under the project
+                r = await client.get(f"/api/projects/{project_id}")
+                proj_domains = [x['domain'] for x in r.json().get('domains', [])]
+                self.assertNotIn('unlink-test.example.com', proj_domains)
+
+                # Unlinking a nonexistent domain is a 404
+                r = await client.patch("/api/targets/domain/999999", json={"company_id": None}, headers=headers)
+                self.assertEqual(r.status_code, 404)
+
         asyncio.run(_test())
 
     def test_domain_detail_with_scope(self):
@@ -549,6 +583,114 @@ class TestWebServerAPIs(unittest.TestCase):
 
                 r = await client.post("/api/targets", json={"type": "domain", "value": "evil.com"})
                 self.assertIn(r.status_code, [401, 302, 403])
+
+        asyncio.run(_test())
+
+
+class TestScanConcurrency(unittest.TestCase):
+    """Test the max-3-concurrent-scan limit and the stop-scan endpoint.
+
+    Uses a sched_manager whose scan methods block on asyncio.sleep so the test
+    can inspect /api/scan/status mid-flight, then cancels them via
+    /api/scan/stop instead of waiting for completion.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from src.config import AppConfig
+        from src.database import DatabaseManager
+        from src.web.server import build_app
+
+        cls.db_path = os.path.join(tempfile.gettempdir(), 'test_scan_concurrency.db')
+        for ext in ('', '-shm', '-wal'):
+            p = cls.db_path + ext
+            if os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+
+        cls.cfg = AppConfig()
+        cls.db = DatabaseManager(cls.db_path)
+        import bcrypt
+        pw_hash = "bcrypt:" + bcrypt.hashpw(b"testpass", bcrypt.gensalt()).decode()
+        cls.db.set_user("testadmin", pw_hash, "admin")
+
+        class _SlowSchedManager:
+            async def run_domain_scan(self, domain, technique_overrides=None):
+                await asyncio.sleep(30)
+                return (0, 0)
+
+            async def run_full_scan(self):
+                await asyncio.sleep(30)
+
+        cls.sched_manager = _SlowSchedManager()
+        cls.app = build_app(cls.db, cls.cfg, sched_manager=cls.sched_manager)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db._engine.dispose()
+        for ext in ('', '-shm', '-wal'):
+            p = cls.db_path + ext
+            if os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
+
+    def test_max_three_concurrent_and_stop(self):
+        import asyncio
+        from httpx import ASGITransport, AsyncClient
+
+        async def _test():
+            transport = ASGITransport(app=self.app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post("/login", json={"username": "testadmin", "password": "testpass"})
+                sess_r = await client.get("/api/session")
+                csrf = sess_r.json().get('csrf_token', '')
+                headers = {"X-CSRF-Token": csrf, "Content-Type": "application/json"}
+
+                scan_ids = []
+                for d in ("a.example.com", "b.example.com", "c.example.com"):
+                    r = await client.post("/api/scan/trigger", json={"domain": d}, headers=headers)
+                    self.assertEqual(r.status_code, 200)
+                    scan_ids.append(r.json()['scan_id'])
+
+                await asyncio.sleep(0.05)  # let the background tasks register
+
+                r = await client.get("/api/scan/status")
+                status = r.json()
+                self.assertEqual(len(status['scans']), 3)
+                self.assertTrue(status['running'])
+
+                # A 4th scan is rejected once at the concurrency limit
+                r = await client.post("/api/scan/trigger", json={"domain": "d.example.com"}, headers=headers)
+                self.assertEqual(r.status_code, 409)
+
+                # Stop the first scan, freeing a slot
+                r = await client.post("/api/scan/stop", json={"scan_id": scan_ids[0]}, headers=headers)
+                self.assertEqual(r.status_code, 200)
+                await asyncio.sleep(0.05)
+
+                r = await client.get("/api/scan/status")
+                self.assertEqual(len(r.json()['scans']), 2)
+
+                # b.example.com is still running — re-triggering it is rejected
+                # even though there is free capacity now
+                r = await client.post("/api/scan/trigger", json={"domain": "b.example.com"}, headers=headers)
+                self.assertEqual(r.status_code, 409)
+
+                # Stopping an unknown scan_id is a 404
+                r = await client.post("/api/scan/stop", json={"scan_id": "doesnotexist"}, headers=headers)
+                self.assertEqual(r.status_code, 404)
+
+                # Clean up the remaining background scans
+                for sid in scan_ids[1:]:
+                    await client.post("/api/scan/stop", json={"scan_id": sid}, headers=headers)
+                await asyncio.sleep(0.05)
+
+                r = await client.get("/api/scan/status")
+                self.assertEqual(len(r.json()['scans']), 0)
 
         asyncio.run(_test())
 
