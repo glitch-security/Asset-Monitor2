@@ -1082,6 +1082,13 @@ def build_app(
                 "created_at": company.created_at.isoformat() if company.created_at else None,
             }
         except Exception as exc:
+            # Check if this is a unique constraint violation (duplicate name)
+            from sqlalchemy.exc import IntegrityError
+            if isinstance(exc, IntegrityError):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A project named '{name}' already exists"
+                )
             logger.error("api_create_project error: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc))
 

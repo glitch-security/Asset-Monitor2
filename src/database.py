@@ -1813,10 +1813,15 @@ class DatabaseManager:
         """Return all companies/projects.
 
         Returns:
-            A list of :class:`Company` objects.
+            A list of :class:`Company` objects with eager-loaded relationships.
         """
         with self.get_session() as session:
-            return list(session.scalars(select(Company).order_by(Company.name)).all())
+            stmt = select(Company).options(
+                selectinload(Company.domains),
+                selectinload(Company.mobile_apps),
+                selectinload(Company.api_assets),
+            ).order_by(Company.name)
+            return list(session.scalars(stmt).all())
 
     def update_company(self, company_id: int, **kwargs: Any) -> Optional[Company]:
         """Update a company's attributes.
