@@ -651,7 +651,7 @@
       <button class="btn btn-sm btn-outline-secondary" style="font-size:.75rem;" onclick="editProject(_pdProjectId)">
         <i class="bi bi-pencil"></i> Edit
       </button>
-      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+      <button class="btn btn-sm btn-outline-primary" style="font-size:.75rem;" onclick="showAddTargetModal()">
         <i class="bi bi-plus-lg"></i> Add Target
       </button>
     </div>
@@ -683,7 +683,7 @@
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <span><i class="bi bi-crosshair"></i> Targets</span>
-          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showCreateProjectModal()">
+          <button class="btn btn-sm btn-primary" style="font-size:.75rem;" onclick="showAddTargetModal()">
             <i class="bi bi-plus-lg"></i> Add Target
           </button>
         </div>
@@ -1430,6 +1430,7 @@ let _ddDomainName = null;
 let _ddData       = null;
 let _editProfileId = null;  // null = create mode
 let _assignDomainId = null;
+let _addTargetModal = null;  // Modal for adding targets (domains/subdomains/websites)
 
 // Project detail state
 let _pdProjectId  = null;
@@ -2323,6 +2324,38 @@ async function refreshAll(manual) {
 }
 
 // ── Add Target modal ─────────────────────────────────────────────────────────
+function showAddTargetModal() {
+  // Reset form to default state
+  document.getElementById('at-type').value = 'domain';
+  onTargetTypeChange();  // Reset UI based on default type
+  document.getElementById('at-value').value = '';
+  document.getElementById('at-profile-id').value = '';
+  document.getElementById('at-scan-now').checked = true;
+
+  // Reset enumeration technique checkboxes to default (checked)
+  document.getElementById('t-ct').checked = true;
+  document.getElementById('t-dns').checked = true;
+  document.getElementById('t-passive').checked = true;
+  document.getElementById('t-wayback').checked = true;
+  document.getElementById('t-ssl').checked = true;
+  document.getElementById('t-js').checked = true;
+  document.getElementById('t-axfr').checked = false;
+  document.getElementById('t-revip').checked = false;
+  document.getElementById('t-dnsrec').checked = true;
+
+  // Reset website technique checkboxes
+  document.getElementById('wt-crawl').checked = true;
+  document.getElementById('wt-js').checked = true;
+  document.getElementById('wt-secfiles').checked = true;
+  document.getElementById('wt-screenshot').checked = false;
+
+  // Initialize and show modal
+  if (!_addTargetModal) {
+    _addTargetModal = new bootstrap.Modal(document.getElementById('addTargetModal'));
+  }
+  _addTargetModal.show();
+}
+
 function onTargetTypeChange() {
   const t = document.getElementById('at-type').value;
   const enumSection    = document.getElementById('at-enum-section');
@@ -2399,6 +2432,8 @@ async function submitAddTarget() {
     const msg = d.scan_triggered ? `Added ${type} "${value}" — scan started` : `Added ${type} "${value}"`;
     showToast(msg, 'success');
     await Promise.all([loadTargets(), loadSummary()]);
+    // Refresh project detail if open
+    if (_pdProjectId) openProjectDetail(_pdProjectId, _pdProjectName);
     if (d.scan_triggered) startScanStatusPolling();
   } catch(e) { showToast('Failed: ' + e.message, 'danger'); }
   finally {
