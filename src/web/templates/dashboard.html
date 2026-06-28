@@ -2242,12 +2242,12 @@ function renderDetailChanges() {
 }
 
 async function loadDnsSecurityData() {
-  if (!_currentDetailDomainId) return;
+  if (!_ddDomainId) return;
   try {
     const tbody = document.getElementById('dd-dnssec-body');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
 
-    const r = await fetch(`/api/domains/${_currentDetailDomainId}/dns-security`);
+    const r = await fetch(`/api/domains/${_ddDomainId}/dns-security`);
     const data = await r.json();
 
     if (r.ok) {
